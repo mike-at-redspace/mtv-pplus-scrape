@@ -247,19 +247,16 @@ class Scraper {
 
                             if (closestEpisodeParent) {
                                 const anchor = closestEpisodeParent.querySelector("a");
-                                return {
-                                    innerHTML: anchor ? anchor.innerHTML : null,
-                                    href: anchor ? anchor.getAttribute("href") : null,
-                                };
+                                return anchor ? anchor.getAttribute("href") : null;
                             }
 
                             return null;
                         }, episodeHandle);
 
-                        if (episodeLink && episodeLink.href) {
+                        if (episodeLink) {
                             console.log(
                                 chalk.greenBright(
-                                    `Identified episode link: ${chalk.white.bold(episodeLink.href)}`,
+                                    `Identified episode link: ${chalk.white.bold(episodeLink)}`,
                                 ),
                             );
                             const { Title, Show, Season, Episode, URL } = row;
@@ -269,7 +266,7 @@ class Scraper {
                                 Season,
                                 Episode,
                                 URL,
-                                episodeLink.href,
+                                episodeLink,
                             );
                             break;
                         }
