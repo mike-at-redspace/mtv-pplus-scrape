@@ -66,20 +66,20 @@ class Scraper {
     return bestMatch
   }
 
-    scrape = async () => {
-        try {
-            const data = await this.readCSV(this.DATA_CSV);
+  scrape = async () => {
+    try {
+      const data = await this.readCSV()
 
-            for (let i = 0; i < data.length; i++) {
-                const row = data[i];
-                this.currentRow = row;
-                await this.processRow();
-                this.progress = `${Math.round((i + 1) / data.length * 100)}%`;
-            }
-        } catch (error) {
-            console.error('Error during scraping:', error);
-        }
-    };
+      for (let i = 0; i < data.length; i++) {
+        const row = data[i]
+        this.currentRow = row
+        await this.processRow()
+        this.progress = `${Math.round(((i + 1) / data.length) * 100)}%`
+      }
+    } catch (error) {
+      console.error('Error during scraping:', error)
+    }
+  }
 
   async processRow() {
     const { Show } = this.currentRow
@@ -178,7 +178,7 @@ class Scraper {
     for (let i = 0; i < searchTerm.length; i++) {
       const char = searchTerm[i]
       await this.page.type('input[name="q"]', char)
-      await this.page.waitForTimeout(600)
+      await this.page.waitForTimeout(400)
 
       const hrefs = await this.page.$$eval(
         '[data-ci="search-results"] a',
@@ -237,9 +237,12 @@ class Scraper {
           const episodeLink = await this.getEpisodeLink(episodeHandle)
 
           if (episodeLink) {
-              if (episodeLink === 'https://www.paramountplus.com/shows/16-and-pregnant/episodes/4/') {
-                debugger
-              }
+            if (
+              episodeLink ===
+              'https://www.paramountplus.com/shows/16-and-pregnant/episodes/4/'
+            ) {
+              debugger
+            }
             this.log(
               chalk.greenBright(
                 `Identified episode link: ${chalk.white.bold(episodeLink)}`
@@ -281,12 +284,13 @@ class Scraper {
     )
   }
 
-    log = message => console.log(`${chalk.bgBlue.bold(`[${this.progress}]`)} ${message}`)
+  log = message =>
+    console.log(`${chalk.bgBlue.bold(`[${this.progress}]`)} ${message}`)
 
-  async readCSV(filePath) {
+  async readCSV() {
     const data = []
     return new Promise((resolve, reject) => {
-      fs.createReadStream(filePath)
+      fs.createReadStream(this.DATA_CSV)
         .pipe(csv())
         .on('data', row => data.push(row))
         .on('end', () => resolve(data))
