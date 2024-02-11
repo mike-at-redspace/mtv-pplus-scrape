@@ -21,7 +21,9 @@ class Scraper {
     this.notFoundList = []
     this.matchesList = []
     this.currentRow = null
-    this.progress = '0%'
+    this.totalRows = 0
+    this.completedRows = 0
+    this.progress = 0
   }
 
   initialize = async () => {
@@ -77,12 +79,14 @@ class Scraper {
   scrape = async () => {
     try {
       const data = await this.readCSV()
+      this.totalRows = data.length
 
       for (let i = 0; i < data.length; i++) {
         const row = data[i]
         this.currentRow = row
+        this.progress = Math.round(((i + 1) / data.length) * 100)
         await this.processRow()
-        this.progress = `${Math.round(((i + 1) / data.length) * 100)}%`
+        this.completedRows = i + 1
       }
     } catch (error) {
       console.error('Error during scraping:', error)
@@ -300,8 +304,27 @@ class Scraper {
     )
   }
 
-  log = message =>
-    console.log(`${chalk.bgBlue.bold(`[${this.progress}]`)} ${message}`)
+  getProgressBar = () => {
+    const progressBarWidth = 20
+    const percentageString = `${this.completedRows}/${this.totalRows} ${this.progress}%`
+    const padLength = Math.ceil(
+      (progressBarWidth - percentageString.length) / 2
+    )
+    const progressString = `${' '.repeat(padLength)}${percentageString}${' '.repeat(progressBarWidth - percentageString.length - padLength)}`
+    const completePart = chalk.bgGreenBright.bold(
+      progressString.slice(0, this.progress)
+    )
+    const colorIntensity = Math.round((this.progress / 100) * 255)
+    const incompletePart = chalk
+      .bgRgb(colorIntensity, 0, 255 - colorIntensity)
+      .bold(progressString.slice(this.progress))
+    return `${completePart}${incompletePart}`
+  }
+
+  log = message => {
+    const progressBar = this.getProgressBar()
+    console.log(`${progressBar} ${message}`)
+  }
 
   readCSV = async () => {
     const data = []
