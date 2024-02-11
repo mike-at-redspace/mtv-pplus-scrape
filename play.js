@@ -237,12 +237,6 @@ class Scraper {
           const episodeLink = await this.getEpisodeLink(episodeHandle)
 
           if (episodeLink) {
-            if (
-              episodeLink ===
-              'https://www.paramountplus.com/shows/16-and-pregnant/episodes/4/'
-            ) {
-              debugger
-            }
             this.log(
               chalk.greenBright(
                 `Identified episode link: ${chalk.white.bold(episodeLink)}`
