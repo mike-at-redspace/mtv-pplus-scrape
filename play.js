@@ -128,6 +128,11 @@ class Scraper {
     }
   }
 
+  async isErrorPage() {
+    const pageTitle = await this.page.title()
+    return pageTitle.includes('404') || pageTitle.includes('Error')
+  }
+
   async srearchForShowPage(searchTerm) {
     this.log(
       chalk.blueBright(
@@ -167,7 +172,9 @@ class Scraper {
       if (Season) {
         const seasonUrl = `${bestMatch}episodes/${Season}/`
         await this.navigateToSeason(seasonUrl)
-        await this.findAndProcessEpisode()
+        if (!await this.isErrorPage()) {
+          await this.findAndProcessEpisode()
+        }
       }
     }
   }
@@ -178,18 +185,23 @@ class Scraper {
     for (let i = 0; i < searchTerm.length; i++) {
       const char = searchTerm[i]
       await this.page.type('input[name="q"]', char)
-      await this.page.waitForTimeout(400)
+      await this.page.waitForTimeout(600) // P+ keyup debounce is 500ms
 
       const hrefs = await this.page.$$eval(
         '[data-ci="search-results"] a',
         results =>
           results
             .map(result => result.href)
+            // we only care about shows
             .filter(href => href.includes('/shows/'))
       )
 
       if (i && !hrefs[0]) {
-        this.log(chalk.red(`No search results found after ${i} characters`))
+        this.log(
+          chalk.red(
+            `No search results found after ${chalk.whiteBright.bold(i)} characters`
+          )
+        )
         i = searchTerm.length
         this.notFoundList.push(searchTerm)
         continue
@@ -220,33 +232,45 @@ class Scraper {
 
   async findAndProcessEpisode() {
     const { Episode } = this.currentRow
+
     if (Episode) {
       const stringToFind = `E${Episode}`
-      const episodes = await this.page
-        .waitForSelector('.episode .epNum', { timeout: 600 })
-        .then(() => this.page.$$('.episode .epNum'))
 
-      for (const episodeHandle of episodes) {
-        const text = await episodeHandle.innerText()
+      try {
+        await this.page.waitForSelector('.episode .epNum', { timeout: 600 })
+        const episodes = await this.page.$$('.episode .epNum')
 
-        if (text === stringToFind) {
-          this.log(
-            chalk.greenBright(`Found episode: ${chalk.whiteBright.bold(text)}`)
-          )
+        for (const episodeHandle of episodes) {
+          const text = await episodeHandle.innerText()
 
-          const episodeLink = await this.getEpisodeLink(episodeHandle)
-
-          if (episodeLink) {
+          if (text === stringToFind) {
             this.log(
               chalk.greenBright(
-                `Identified episode link: ${chalk.white.bold(episodeLink)}`
+                `Found episode: ${chalk.whiteBright.bold(text)}`
               )
             )
-            const { Title, Show, Season, URL } = this.currentRow
-            this.writeOutput(Title, Show, Season, Episode, URL, episodeLink)
-            break
+
+            const episodeLink = await this.getEpisodeLink(episodeHandle)
+
+            if (episodeLink) {
+              this.log(
+                chalk.greenBright(
+                  `Identified episode link: ${chalk.white.bold(episodeLink)}`
+                )
+              )
+
+              const { Title, Show, Season, URL } = this.currentRow
+              this.writeOutput(Title, Show, Season, Episode, URL, episodeLink)
+              break
+            }
           }
         }
+      } catch (error) {
+        this.log(
+          chalk.red(
+            `Error finding and processing episode: ${chalk.whiteBright.bold(error.message)}`
+          )
+        )
       }
     }
   }
