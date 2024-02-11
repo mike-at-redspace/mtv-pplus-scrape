@@ -6,11 +6,16 @@ import * as fs from 'fs'
 
 class Scraper {
   constructor() {
+    // constants
+    this.FALLBACK_URL = 'https://www.paramountplus.com/brands/mtv/'
     this.SEARCH_URL = 'https://www.paramountplus.com/search/'
     this.SHOWS_URL = 'https://www.paramountplus.com/shows/'
-    this.BRAND_FALLBACK = 'https://www.paramountplus.com/brands/mtv/'
     this.DATA_CSV = 'data.csv'
     this.RESULT_CSV = 'output.csv'
+    this.MIN_CONFIDENCE = 0.6
+    this.MIN_SEARCH_LENGTH = 3
+
+    // instance variables
     this.browser = null
     this.page = null
     this.notFoundList = []
@@ -21,6 +26,7 @@ class Scraper {
 
   initialize = async () => {
     console.clear()
+    // uncomment for headless mode
     // this.browser = await chromium.launch({ headless: false })
     this.browser = await chromium.launch()
     this.page = await this.browser.newPage()
@@ -28,8 +34,8 @@ class Scraper {
 
   closeBrowser = async () => await this.browser.close()
 
-  slugify = inputString =>
-    inputString
+  slugify = searchTerm =>
+    searchTerm
       .split(' - ')[0]
       .toLowerCase()
       .replace(/[^a-z0-9 -]/g, '')
@@ -37,8 +43,8 @@ class Scraper {
       .replace(/-+/g, '-')
       .trim()
 
-  findBestMatch = (inputString, urlList, threshold = 0.6) => {
-    const normalizedInput = this.slugify(inputString)
+  findBestMatch = (searchTerm, urlList) => {
+    const normalizedInput = this.slugify(searchTerm)
     let bestMatch = null
     let highestScore = 0
 
@@ -50,16 +56,17 @@ class Scraper {
 
       const score = compareTwoStrings(normalizedInput, normalizedUrl)
 
-      if (score > threshold && score > highestScore) {
+      if (score > this.MIN_CONFIDENCE && score > highestScore) {
         bestMatch = url
         highestScore = score
       }
     }
 
     if (bestMatch) {
+      this.matchesList.push({ searchTerm, bestMatch })
       this.log(
         chalk.greenBright(
-          `Best match for ${chalk.white.bold(inputString)} is ${chalk.white.bold(bestMatch)} with a score of ${chalk.white.bold(highestScore)}`
+          `Best match for ${chalk.white.bold(searchTerm)} is ${chalk.white.bold(bestMatch)} with a score of ${chalk.white.bold(highestScore)}`
         )
       )
     }
@@ -94,7 +101,7 @@ class Scraper {
       if (existingMatch) {
         await this.handleExistingMatch(existingMatch)
       } else {
-        await this.srearchForShowPage(searchTerm)
+        await this.searchProperty(searchTerm)
       }
     }
   }
@@ -106,25 +113,18 @@ class Scraper {
       )
     )
     const { Title, Season, Episode, URL } = this.currentRow
-    this.writeOutput(
-      Title,
-      searchTerm,
-      Season,
-      Episode,
-      URL,
-      this.BRAND_FALLBACK
-    )
+    this.writeOutput(Title, searchTerm, Season, Episode, URL, this.FALLBACK_URL)
   }
 
   findExistingMatch = searchTerm =>
     this.matchesList.find(match => match.searchTerm === searchTerm)
 
-  handleExistingMatch = ({ bestMatch, searchTerm }) => {
+  handleExistingMatch = async ({ bestMatch, searchTerm }) => {
     const { Title, Season, Episode, URL } = this.currentRow
     this.writeOutput(Title, searchTerm, Season, Episode, URL, bestMatch)
     if (Season) {
       const seasonUrl = `${bestMatch}episodes/${Season}/`
-      return this.navigateToSeason(seasonUrl)
+      return await this.gotoSeason(seasonUrl)
     }
   }
 
@@ -133,7 +133,7 @@ class Scraper {
     return pageTitle.includes('404') || pageTitle.includes('Error')
   }
 
-  srearchForShowPage = async searchTerm => {
+  searchProperty = async searchTerm => {
     this.log(
       chalk.blueBright(
         `Searching Paramount+ for: ${chalk.white.bold(searchTerm)}`
@@ -141,13 +141,9 @@ class Scraper {
     )
 
     await this.page.goto(this.SEARCH_URL)
-    await this.performSearch(searchTerm)
-
-    const bestMatch = this.findBestMatch(
-      searchTerm,
-      this.matchesList.map(match => match.bestMatch)
-    )
+    const bestMatch = await this.performSearch(searchTerm)
     const { Title, Season, Episode, URL } = this.currentRow
+
     if (!bestMatch) {
       this.log(
         chalk.red(`No optimal match found for ${chalk.white.bold(Title)}`)
@@ -159,7 +155,7 @@ class Scraper {
         Season,
         Episode,
         URL,
-        this.BRAND_FALLBACK
+        this.FALLBACK_URL
       )
     } else {
       this.log(
@@ -171,7 +167,7 @@ class Scraper {
 
       if (Season) {
         const seasonUrl = `${bestMatch}episodes/${Season}/`
-        await this.navigateToSeason(seasonUrl)
+        await this.gotoSeason(seasonUrl)
         if (!(await this.isErrorPage())) {
           await this.findEpisodeTarget()
         }
@@ -180,6 +176,7 @@ class Scraper {
   }
 
   performSearch = async searchTerm => {
+    let bestMatch = null
     await this.page.type('input[name="q"]', '')
 
     for (let i = 0; i < searchTerm.length; i++) {
@@ -196,7 +193,7 @@ class Scraper {
             .filter(href => href.includes('/shows/'))
       )
 
-      if (i && !hrefs[0]) {
+      if (i > this.MIN_SEARCH_LENGTH && !hrefs[0]) {
         this.log(
           chalk.red(
             `No search results found after ${chalk.whiteBright.bold(i)} characters`
@@ -207,16 +204,17 @@ class Scraper {
         continue
       }
 
-      const bestMatch = this.findBestMatch(searchTerm, hrefs)
+      bestMatch = this.findBestMatch(searchTerm, hrefs)
 
       if (bestMatch) {
         this.matchesList.push({ searchTerm, bestMatch })
         break
       }
     }
+    return bestMatch
   }
 
-  navigateToSeason = async seasonUrl => {
+  gotoSeason = async seasonUrl => {
     if (!this.page.url().includes(seasonUrl)) {
       this.log(
         chalk.magenta(`Identified season link: ${chalk.white.bold(seasonUrl)}`)
@@ -250,7 +248,7 @@ class Scraper {
               )
             )
 
-            const episodeLink = await this.getEpisodeLink(episodeHandle)
+            const episodeLink = await this.getEpisodeHref(episodeHandle)
 
             if (episodeLink) {
               this.log(
@@ -275,7 +273,7 @@ class Scraper {
     }
   }
 
-  getEpisodeLink = async episodeHandle => {
+  getEpisodeHref = async episodeHandle => {
     return await episodeHandle.evaluate(element => {
       const findClosestEpisodeParent = el => {
         while (el && !el.classList.contains('episode')) {
