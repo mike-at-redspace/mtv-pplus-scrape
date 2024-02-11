@@ -1,25 +1,27 @@
 import { chromium } from 'playwright'
-import stringSimilarity from 'string-similarity'
+import { compareTwoStrings } from 'string-similarity'
 import csv from 'csv-parser'
 import chalk from 'chalk'
 import * as fs from 'fs'
 
 class Scraper {
   constructor() {
-    this.notFoundList = []
-    this.matchesList = []
-    this.browser = null
-    this.page = null
     this.SEARCH_URL = 'https://www.paramountplus.com/search/'
     this.SHOWS_URL = 'https://www.paramountplus.com/shows/'
     this.BRAND_FALLBACK = 'https://www.paramountplus.com/brands/mtv/'
     this.DATA_CSV = 'data.csv'
     this.RESULT_CSV = 'output.csv'
+    this.browser = null
+    this.page = null
+    this.notFoundList = []
+    this.matchesList = []
+    this.currentRow = null
+    this.progress = '0%'
   }
 
   initialize = async () => {
     console.clear()
-    this.browser = await chromium.launch()
+    this.browser = await chromium.launch({ headless: false })
     this.page = await this.browser.newPage()
   }
 
@@ -45,10 +47,7 @@ class Scraper {
         .replace(this.SHOWS_URL, '')
         .replace(/\/$/, '')
 
-      const score = stringSimilarity.compareTwoStrings(
-        normalizedInput,
-        normalizedUrl
-      )
+      const score = compareTwoStrings(normalizedInput, normalizedUrl)
 
       if (score > threshold && score > highestScore) {
         bestMatch = url
@@ -57,7 +56,7 @@ class Scraper {
     }
 
     if (bestMatch) {
-      console.log(
+      this.log(
         chalk.greenBright(
           `Best match for ${chalk.white.bold(inputString)} is ${chalk.white.bold(bestMatch)} with a score of ${chalk.white.bold(highestScore)}`
         )
@@ -67,47 +66,45 @@ class Scraper {
     return bestMatch
   }
 
-  scrape = async () => {
-    try {
-      const data = await this.readCSV(this.DATA_CSV)
+    scrape = async () => {
+        try {
+            const data = await this.readCSV(this.DATA_CSV);
 
-      for (const row of data) {
-        await this.processRow(row)
-      }
-    } catch (error) {
-      console.error('Error during scraping:', error)
-      // Handle errors here
-    }
-  }
+            for (let i = 0; i < data.length; i++) {
+                const row = data[i];
+                this.currentRow = row;
+                await this.processRow();
+                this.progress = `${Math.round((i + 1) / data.length * 100)}%`;
+            }
+        } catch (error) {
+            console.error('Error during scraping:', error);
+        }
+    };
 
-  async processRow(row) {
-    const { URL, Title, Season, Episode, Show } = row
+  async processRow() {
+    const { Show } = this.currentRow
     const searchTerm = Show.replace(/\s+/g, ' ')
 
     if (this.notFoundList.includes(searchTerm)) {
-      this.handleBrandFallback(searchTerm, Title, Season, Episode, URL)
+      this.handleBrandFallback(searchTerm)
     } else {
       const existingMatch = this.findExistingMatch(searchTerm)
 
       if (existingMatch) {
-        await this.handleExistingMatch(existingMatch, row)
+        await this.handleExistingMatch(existingMatch)
       } else {
-        await this.srearchForShowPage(searchTerm, {
-          Title,
-          Season,
-          Episode,
-          URL
-        })
+        await this.srearchForShowPage(searchTerm)
       }
     }
   }
 
-  handleBrandFallback(searchTerm, Title, Season, Episode, URL) {
-    console.log(
+  handleBrandFallback(searchTerm) {
+    this.log(
       chalk.magentaBright(
         `Skipped ${chalk.white.bold(searchTerm)} as it was not found previously`
       )
     )
+    const { Title, Season, Episode, URL } = this.currentRow
     this.writeOutput(
       Title,
       searchTerm,
@@ -122,8 +119,8 @@ class Scraper {
     return this.matchesList.find(match => match.searchTerm === searchTerm)
   }
 
-  handleExistingMatch({ bestMatch, searchTerm }, row) {
-    const { Title, Season, Episode, URL } = row
+  handleExistingMatch({ bestMatch, searchTerm }) {
+    const { Title, Season, Episode, URL } = this.currentRow
     this.writeOutput(Title, searchTerm, Season, Episode, URL, bestMatch)
     if (Season) {
       const seasonUrl = `${bestMatch}episodes/${Season}/`
@@ -131,8 +128,8 @@ class Scraper {
     }
   }
 
-  async srearchForShowPage(searchTerm, row) {
-    console.log(
+  async srearchForShowPage(searchTerm) {
+    this.log(
       chalk.blueBright(
         `Searching Paramount+ for: ${chalk.white.bold(searchTerm)}`
       )
@@ -145,9 +142,9 @@ class Scraper {
       searchTerm,
       this.matchesList.map(match => match.bestMatch)
     )
-    const { Title, Season, Episode, URL } = row
+    const { Title, Season, Episode, URL } = this.currentRow
     if (!bestMatch) {
-      console.log(
+      this.log(
         chalk.red(`No optimal match found for ${chalk.white.bold(Title)}`)
       )
 
@@ -160,7 +157,7 @@ class Scraper {
         this.BRAND_FALLBACK
       )
     } else {
-      console.log(
+      this.log(
         chalk.greenBright(
           `Already processed ${chalk.white.bold(searchTerm)} checking for episodes`
         )
@@ -169,7 +166,8 @@ class Scraper {
 
       if (Season) {
         const seasonUrl = `${bestMatch}episodes/${Season}/`
-        this.findAndProcessEpisode(seasonUrl)
+        await this.navigateToSeason(seasonUrl)
+        await this.findAndProcessEpisode()
       }
     }
   }
@@ -191,7 +189,7 @@ class Scraper {
       )
 
       if (i && !hrefs[0]) {
-        console.log(chalk.red(`No search results found after ${i} characters`))
+        this.log(chalk.red(`No search results found after ${i} characters`))
         i = searchTerm.length
         this.notFoundList.push(searchTerm)
         continue
@@ -208,7 +206,7 @@ class Scraper {
 
   async navigateToSeason(seasonUrl) {
     if (!this.page.url().includes(seasonUrl)) {
-      console.log(
+      this.log(
         chalk.magenta(`Identified season link: ${chalk.white.bold(seasonUrl)}`)
       )
     }
@@ -220,31 +218,34 @@ class Scraper {
       })
   }
 
-  async findAndProcessEpisode(row) {
-    const { Episode } = row
+  async findAndProcessEpisode() {
+    const { Episode } = this.currentRow
     if (Episode) {
       const stringToFind = `E${Episode}`
       const episodes = await this.page
-        .waitForSelector('.episode .epNum', { timeout: 5000 })
+        .waitForSelector('.episode .epNum', { timeout: 600 })
         .then(() => this.page.$$('.episode .epNum'))
 
       for (const episodeHandle of episodes) {
         const text = await episodeHandle.innerText()
 
         if (text === stringToFind) {
-          console.log(
+          this.log(
             chalk.greenBright(`Found episode: ${chalk.whiteBright.bold(text)}`)
           )
 
           const episodeLink = await this.getEpisodeLink(episodeHandle)
 
           if (episodeLink) {
-            console.log(
+              if (episodeLink === 'https://www.paramountplus.com/shows/16-and-pregnant/episodes/4/') {
+                debugger
+              }
+            this.log(
               chalk.greenBright(
                 `Identified episode link: ${chalk.white.bold(episodeLink)}`
               )
             )
-            const { Title, Show, Season, URL } = row
+            const { Title, Show, Season, URL } = this.currentRow
             this.writeOutput(Title, Show, Season, Episode, URL, episodeLink)
             break
           }
@@ -279,6 +280,8 @@ class Scraper {
       `"${Title}",${Show},${Season},${Episode},${URL},${target}\n`
     )
   }
+
+    log = message => console.log(`${chalk.bgBlue.bold(`[${this.progress}]`)} ${message}`)
 
   async readCSV(filePath) {
     const data = []
