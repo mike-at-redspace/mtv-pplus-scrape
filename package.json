@@ -10,13 +10,13 @@
   },
   "lint-staged": {
     "*.{js,jsx,ts,tsx,json,css,scss,md}": [
-      "npm run format",
+      "yarn run format",
       "git add"
     ]
   },
   "husky": {
     "hooks": {
-      "pre-commit": "npm run precommit"
+      "pre-commit": "yarn run precommit"
     }
   },
   "keywords": [],
