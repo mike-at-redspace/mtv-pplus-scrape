@@ -21,7 +21,8 @@ class Scraper {
 
   initialize = async () => {
     console.clear()
-    this.browser = await chromium.launch({ headless: false })
+    // this.browser = await chromium.launch({ headless: false })
+    this.browser = await chromium.launch()
     this.page = await this.browser.newPage()
   }
 
@@ -36,7 +37,7 @@ class Scraper {
       .replace(/-+/g, '-')
       .trim()
 
-  findBestMatch(inputString, urlList, threshold = 0.6) {
+  findBestMatch = (inputString, urlList, threshold = 0.6) => {
     const normalizedInput = this.slugify(inputString)
     let bestMatch = null
     let highestScore = 0
@@ -81,7 +82,7 @@ class Scraper {
     }
   }
 
-  async processRow() {
+  processRow = async () => {
     const { Show } = this.currentRow
     const searchTerm = Show.replace(/\s+/g, ' ')
 
@@ -98,7 +99,7 @@ class Scraper {
     }
   }
 
-  handleBrandFallback(searchTerm) {
+  handleBrandFallback = searchTerm => {
     this.log(
       chalk.magentaBright(
         `Skipped ${chalk.white.bold(searchTerm)} as it was not found previously`
@@ -115,11 +116,10 @@ class Scraper {
     )
   }
 
-  findExistingMatch(searchTerm) {
-    return this.matchesList.find(match => match.searchTerm === searchTerm)
-  }
+  findExistingMatch = searchTerm =>
+    this.matchesList.find(match => match.searchTerm === searchTerm)
 
-  handleExistingMatch({ bestMatch, searchTerm }) {
+  handleExistingMatch = ({ bestMatch, searchTerm }) => {
     const { Title, Season, Episode, URL } = this.currentRow
     this.writeOutput(Title, searchTerm, Season, Episode, URL, bestMatch)
     if (Season) {
@@ -128,12 +128,12 @@ class Scraper {
     }
   }
 
-  async isErrorPage() {
+  isErrorPage = async () => {
     const pageTitle = await this.page.title()
     return pageTitle.includes('404') || pageTitle.includes('Error')
   }
 
-  async srearchForShowPage(searchTerm) {
+  srearchForShowPage = async searchTerm => {
     this.log(
       chalk.blueBright(
         `Searching Paramount+ for: ${chalk.white.bold(searchTerm)}`
@@ -172,14 +172,14 @@ class Scraper {
       if (Season) {
         const seasonUrl = `${bestMatch}episodes/${Season}/`
         await this.navigateToSeason(seasonUrl)
-        if (!await this.isErrorPage()) {
-          await this.findAndProcessEpisode()
+        if (!(await this.isErrorPage())) {
+          await this.findEpisodeTarget()
         }
       }
     }
   }
 
-  async performSearch(searchTerm) {
+  performSearch = async searchTerm => {
     await this.page.type('input[name="q"]', '')
 
     for (let i = 0; i < searchTerm.length; i++) {
@@ -216,7 +216,7 @@ class Scraper {
     }
   }
 
-  async navigateToSeason(seasonUrl) {
+  navigateToSeason = async seasonUrl => {
     if (!this.page.url().includes(seasonUrl)) {
       this.log(
         chalk.magenta(`Identified season link: ${chalk.white.bold(seasonUrl)}`)
@@ -230,7 +230,7 @@ class Scraper {
       })
   }
 
-  async findAndProcessEpisode() {
+  findEpisodeTarget = async () => {
     const { Episode } = this.currentRow
 
     if (Episode) {
@@ -275,7 +275,7 @@ class Scraper {
     }
   }
 
-  async getEpisodeLink(episodeHandle) {
+  getEpisodeLink = async episodeHandle => {
     return await episodeHandle.evaluate(element => {
       const findClosestEpisodeParent = el => {
         while (el && !el.classList.contains('episode')) {
@@ -295,7 +295,7 @@ class Scraper {
     })
   }
 
-  writeOutput(Title, Show, Season, Episode, URL, target) {
+  writeOutput = (Title, Show, Season, Episode, URL, target) => {
     fs.appendFileSync(
       this.RESULT_CSV,
       `"${Title}",${Show},${Season},${Episode},${URL},${target}\n`
@@ -305,7 +305,7 @@ class Scraper {
   log = message =>
     console.log(`${chalk.bgBlue.bold(`[${this.progress}]`)} ${message}`)
 
-  async readCSV() {
+  readCSV = async () => {
     const data = []
     return new Promise((resolve, reject) => {
       fs.createReadStream(this.DATA_CSV)
