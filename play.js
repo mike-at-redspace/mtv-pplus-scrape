@@ -68,7 +68,7 @@ class Scraper {
       this.matchesList.push({ searchTerm, bestMatch })
       this.log(
         chalk.greenBright(
-          `Best match for ${chalk.white.bold(searchTerm)} is ${chalk.white.bold(bestMatch)} with a score of ${chalk.white.bold(highestScore)}`
+          `Best match for ${chalk.white.bold(searchTerm)} is ${chalk.white.bold(bestMatch)} with a score of ${chalk.white.bold(Math.round(highestScore * 100))}%`
         )
       )
     }
@@ -126,10 +126,7 @@ class Scraper {
   handleExistingMatch = async ({ bestMatch, searchTerm }) => {
     const { Title, Season, Episode, URL } = this.currentRow
     this.writeOutput(Title, searchTerm, Season, Episode, URL, bestMatch)
-    if (Season) {
-      const seasonUrl = `${bestMatch}episodes/${Season}/`
-      return await this.gotoSeason(seasonUrl)
-    }
+    await this.findEpisodeTarget(bestMatch)
   }
 
   isErrorPage = async () => {
@@ -168,14 +165,7 @@ class Scraper {
         )
       )
       this.writeOutput(Title, searchTerm, Season, Episode, URL, bestMatch)
-
-      if (Season) {
-        const seasonUrl = `${bestMatch}episodes/${Season}/`
-        await this.gotoSeason(seasonUrl)
-        if (!(await this.isErrorPage())) {
-          await this.findEpisodeTarget()
-        }
-      }
+      await this.findEpisodeTarget(bestMatch)
     }
   }
 
@@ -223,57 +213,61 @@ class Scraper {
       this.log(
         chalk.magenta(`Identified season link: ${chalk.white.bold(seasonUrl)}`)
       )
+      return await this.page
+        .goto(seasonUrl, { waitUntil: 'domcontentloaded' })
+        .catch(error => {
+          console.error('Error during seasons navigation:', error)
+        })
     }
-
-    return await this.page
-      .goto(seasonUrl, { waitUntil: 'domcontentloaded' })
-      .catch(error => {
-        console.error('Error during seasons navigation:', error)
-      })
   }
 
-  findEpisodeTarget = async () => {
-    const { Episode } = this.currentRow
+  findEpisodeTarget = async bestMatch => {
+    const { Episode, Season } = this.currentRow
+    if (!Episode || !Season || !bestMatch) {
+      return
+    }
 
-    if (Episode) {
-      const stringToFind = `E${Episode}`
+    const seasonUrl = `${bestMatch}episodes/${Season}/`
+    await this.gotoSeason(seasonUrl)
 
-      try {
-        await this.page.waitForSelector('.episode .epNum', { timeout: 600 })
-        const episodes = await this.page.$$('.episode .epNum')
+    if (await this.isErrorPage()) {
+      this.log(
+        chalk.red(`Error page found for ${chalk.whiteBright.bold(seasonUrl)}`)
+      )
+      return
+    }
 
-        for (const episodeHandle of episodes) {
-          const text = await episodeHandle.innerText()
+    const stringToFind = `E${Episode}`
 
-          if (text === stringToFind) {
+    try {
+      await this.page.waitForSelector('.episode .epNum', { timeout: 600 })
+      const episodes = await this.page.$$('.episode .epNum')
+
+      for (const episodeHandle of episodes) {
+        const text = await episodeHandle.innerText()
+
+        if (text === stringToFind) {
+          const episodeLink = await this.getEpisodeHref(episodeHandle)
+
+          if (episodeLink) {
             this.log(
               chalk.greenBright(
-                `Found episode: ${chalk.whiteBright.bold(text)}`
+                `Identified episode link for ${chalk.white.bold(stringToFind)}: ${chalk.white.bold(episodeLink)}`
               )
             )
 
-            const episodeLink = await this.getEpisodeHref(episodeHandle)
-
-            if (episodeLink) {
-              this.log(
-                chalk.greenBright(
-                  `Identified episode link: ${chalk.white.bold(episodeLink)}`
-                )
-              )
-
-              const { Title, Show, Season, URL } = this.currentRow
-              this.writeOutput(Title, Show, Season, Episode, URL, episodeLink)
-              break
-            }
+            const { Title, Show, Season, URL } = this.currentRow
+            this.writeOutput(Title, Show, Season, Episode, URL, episodeLink)
+            break
           }
         }
-      } catch (error) {
-        this.log(
-          chalk.red(
-            `Error finding and processing episode: ${chalk.whiteBright.bold(error.message)}`
-          )
-        )
       }
+    } catch (error) {
+      this.log(
+        chalk.red(
+          `Error finding and processing episode: ${chalk.whiteBright.bold(error.message)}`
+        )
+      )
     }
   }
 
