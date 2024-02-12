@@ -29,8 +29,8 @@ class Scraper {
   initialize = async () => {
     console.clear()
     // uncomment for headless mode
-    // this.browser = await chromium.launch({ headless: false })
-    this.browser = await chromium.launch()
+    // this.browser = await chromium.launch()
+    this.browser = await chromium.launch({ headless: false })
     this.page = await this.browser.newPage()
   }
 
@@ -84,9 +84,9 @@ class Scraper {
       for (let i = 0; i < data.length; i++) {
         const row = data[i]
         this.currentRow = row
-        this.progress = Math.round(((i + 1) / data.length) * 100)
         await this.processRow()
         this.completedRows = i + 1
+        this.progress = Math.round(((i + 1) / data.length) * 100)
       }
     } catch (error) {
       console.error('Error during scraping:', error)
@@ -311,14 +311,14 @@ class Scraper {
       (progressBarWidth - percentageString.length) / 2
     )
     const progressString = `${' '.repeat(padLength)}${percentageString}${' '.repeat(progressBarWidth - percentageString.length - padLength)}`
-    const completePart = chalk.bgGreenBright.bold(
-      progressString.slice(0, this.progress)
-    )
-    const colorIntensity = Math.round((this.progress / 100) * 255)
-    const incompletePart = chalk
-      .bgRgb(colorIntensity, 0, 255 - colorIntensity)
-      .bold(progressString.slice(this.progress))
-    return `${completePart}${incompletePart}`
+    const completedWidth = Math.floor((this.progress / 100) * progressBarWidth)
+    const completeString = progressString.slice(0, completedWidth)
+    const incompleteString = progressString.replace(completeString, '')
+    const completePercentagePart = chalk.bgRgb(73, 215, 97).bold(completeString)
+    const incompletePercentagePart = chalk
+      .bgRgb(0, 102, 219)
+      .bold(incompleteString)
+    return `${completePercentagePart}${incompletePercentagePart}`
   }
 
   log = message => {
