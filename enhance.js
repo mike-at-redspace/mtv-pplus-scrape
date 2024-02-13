@@ -1,58 +1,83 @@
-import fs from 'fs'
-import csv from 'csvtojson'
-import { parseAsync, transforms } from 'json2csv'
-import { promisify } from 'util'
-import chalk from 'chalk'
+import fs from 'fs';
+import csv from 'csvtojson';
+import { parseAsync, transforms } from 'json2csv';
+import { promisify } from 'util';
+import inquirer from 'inquirer';
+import chalk from 'chalk';
 
-const { flatten } = transforms
-const readFileAsync = promisify(fs.readFile)
-const writeFileAsync = promisify(fs.writeFile)
+const { flatten } = transforms;
+const readFileAsync = promisify(fs.readFile);
+const writeFileAsync = promisify(fs.writeFile);
 
-async function addColumns() {
+async function addColumns(inputFile, outputFile) {
   try {
-    const csvData = await readFileAsync('raw.csv', 'utf8')
-    const records = await parseCSV(csvData)
+    const csvData = await readFileAsync(inputFile, 'utf8');
+    const records = await parseCSV(csvData);
 
     for (const record of records) {
-      const match = record['URL'].match(/season-(\d+)-ep-(\d+)/i)
+      const match = record['URL'].match(/season-(\d+)-ep-(\d+)/i);
       if (match) {
-        record['Season'] = parseInt(match[1], 10)
-        record['Episode'] = parseInt(match[2], 10)
+        record['Season'] = parseInt(match[1], 10);
+        record['Episode'] = parseInt(match[2], 10);
       } else {
-        record['Season'] = null
-        record['Episode'] = null
+        record['Season'] = null;
+        record['Episode'] = null;
       }
 
       // Extract show name before the first " - "
-      const titleParts = record['Title'].split(' - ')
-      record['Show'] = titleParts.length > 0 ? titleParts[0] : ''
+      const titleParts = record['Title'].split(' - ');
+      record['Show'] = titleParts.length > 0 ? titleParts[0] : '';
     }
 
     const outputCSV = await stringify(records, {
       header: true,
-      columns: ['URL', 'Title', 'Show', 'Season', 'Episode']
-    })
-    await writeFileAsync('data.csv', outputCSV)
+      columns: ['URL', 'Title', 'Show', 'Season', 'Episode'],
+    });
+    await writeFileAsync(outputFile, outputCSV);
     console.log(
       chalk.greenBright(
-        `Output CSV file generated: ${chalk.whiteBright.bold('data.csv')} run ${chalk.whiteBright.bold('play.js')} to start scraping the target urls`
+        `Output CSV file generated: ${chalk.whiteBright.bold(outputFile)}`
       )
-    )
+    );
   } catch (error) {
-    console.error(chalk.red('Error:'), error)
+    console.error(chalk.red('Error:'), error);
   }
 }
 
 async function parseCSV(csvData) {
-  const jsonArray = await csv().fromString(csvData)
-  return jsonArray
+  const jsonArray = await csv().fromString(csvData);
+  return jsonArray;
 }
 
 async function stringify(data, options) {
   return parseAsync(data, {
     ...options,
-    transforms: [flatten(options.transforms)]
-  })
+    transforms: [flatten(options.transforms)],
+  });
 }
 
-addColumns()
+async function runScript() {
+  // CLI prompts for input and output file names
+  const { inputFile, outputFile } = await inquirer.prompt([
+    {
+      type: 'input',
+      name: 'inputFile',
+      message: 'Enter the input file name:',
+      default: 'raw.csv',
+    },
+    {
+      type: 'input',
+      name: 'outputFile',
+      message: 'Enter the output file name:',
+      default: 'data.csv',
+    },
+  ]);
+
+  // Run the script with provided file names
+  await addColumns(inputFile, outputFile);
+}
+
+// Run the script
+runScript().catch((error) => {
+  console.error(chalk.red('Error:'), error);
+});
