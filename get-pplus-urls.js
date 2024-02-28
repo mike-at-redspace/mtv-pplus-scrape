@@ -25,7 +25,6 @@ class Scraper {
     this.currentRow = null
     this.totalRows = 0
     this.completedRows = 0
-    this.progress = 0
   }
 
   initialize = async () => {
@@ -35,13 +34,17 @@ class Scraper {
         type: 'input',
         name: 'inputFile',
         message: 'Enter the input file name:',
-        default: this.DATA_CSV
+        default: this.DATA_CSV,
+        validate: value =>
+          value.trim() !== '' ? true : 'Please enter a valid output file name.'
       },
       {
         type: 'input',
         name: 'outputFile',
         message: 'Enter the output file name:',
-        default: this.RESULT_CSV
+        default: this.RESULT_CSV,
+        validate: value =>
+          value.trim() !== '' ? true : 'Please enter a valid output file name.'
       }
     ])
     this.DATA_CSV = inputFile
@@ -115,7 +118,6 @@ class Scraper {
         this.currentRow = row
         await this.processRow()
         this.completedRows = i + 1
-        this.progress = Math.round(((i + 1) / data.length) * 100)
       }
     } catch (error) {
       console.error('Error during scraping:', error)
@@ -341,18 +343,25 @@ class Scraper {
 
   getProgressBar = () => {
     const progressBarWidth = 20
-    const percentageString = `${this.completedRows}/${this.totalRows} ${this.progress}%`
-    const padLength = Math.ceil(
-      (progressBarWidth - percentageString.length) / 2
+    const progress =
+      this.totalItems > 0
+        ? Math.floor((this.currentItem / this.totalItems) * 100)
+        : 0
+    const percentageString = `${this.completedRows}/${this.totalRows} ${progress}%`
+    const padLength = Math.max(
+      0,
+      Math.ceil((progressBarWidth - percentageString.length) / 2)
     )
-    const progressString = `${' '.repeat(padLength)}${percentageString}${' '.repeat(progressBarWidth - percentageString.length - padLength)}`
-    const completedWidth = Math.floor((this.progress / 100) * progressBarWidth)
+    const padding = ' '.repeat(padLength)
+    const progressString = `${padding}${percentageString}${' '.repeat(progressBarWidth - percentageString.length - padLength)}`
+    const completedWidth = Math.floor((progress / 100) * progressBarWidth)
     const completeString = progressString.slice(0, completedWidth)
-    const incompleteString = progressString.replace(completeString, '')
+    const incompleteString = progressString.slice(completedWidth)
     const completePercentagePart = chalk.bgRgb(73, 215, 97).bold(completeString)
     const incompletePercentagePart = chalk
       .bgRgb(0, 102, 219)
       .bold(incompleteString)
+
     return `${completePercentagePart}${incompletePercentagePart}`
   }
 
