@@ -7,27 +7,52 @@ import csv from 'csv-parser'
 import { parseAsync } from 'json2csv'
 
 class Crawler {
-  browser = null
-  context = null
+  browsers = []
+  contexts = []
   item = 0
   totalItems = 0
   history = []
+  retries = 0
+  MAX_SESSIONS = 10
 
   async initializeBrowser() {
-    this.browser = await chromium.launch({ headless: false })
+    // Initialize MAX_SESSIONS browser instances
+    for (let i = 0; i < this.MAX_SESSIONS; i++) {
+      this.browsers[i] = await chromium.launch()
+    }
   }
 
   async closeBrowser() {
-    if (this.browser) {
-      await this.browser.close()
+    for (const browser of this.browsers) {
+      if (browser) {
+        await browser.close()
+      }
     }
+  }
+
+  is404Page = async page => {
+    const pageTitle = await page.title()
+    return pageTitle.includes('Error 404')
+  }
+
+  is500Page = async page => {
+    const pageTitle = await page.title()
+    return pageTitle.includes('Server')
   }
 
   async crawlAndExtract(page, url) {
     this.log(chalk.yellow(`Crawling: ${chalk.whiteBright.bold(url)}`))
     this.item++
     try {
+      this.retries++
       await page.goto(url)
+      if (await this.is404Page(page)) {
+        this.retries = 3
+        throw new Error('404 Error')
+      }
+      if (await this.is500Page(page)) {
+        throw new Error('500 Error')
+      }
       const titleElement = await page.waitForSelector('.title-wrap > a > div', {
         timeout: 600
       })
@@ -41,34 +66,56 @@ class Crawler {
       this.history.push({ url, title })
       return { Title: title, Show: title, URL: url }
     } catch (error) {
-      this.log(chalk.red(`Error crawling ${url}: ${error.message}`))
-      this.history.push({ url })
+      if (this.retries < 3) {
+        this.log(
+          chalk.yellow(
+            `${error.message} Retrying (${this.retries}/3) for: ${chalk.whiteBright.bold(url)}`
+          )
+        )
+        return this.crawlAndExtract(page, url)
+      } else {
+        this.log(chalk.red(`Error crawling ${url}: ${error.message}`))
+        this.history.push({ url })
+      }
+
       return null
     }
   }
 
   async crawlAllUrls(urls) {
-    this.context = await this.browser.newContext()
-    const page = await this.context.newPage()
+    const urlsPerBrowser = this.distributeUrls(urls)
 
-    await page.setViewportSize({ width: 500, height: 900 })
+    let crawledData = []
+    for (let i = 0; i < this.browsers.length; i++) {
+      this.contexts[i] = await this.browsers[i].newContext()
+      const page = await this.contexts[i].newPage()
+      await page.setViewportSize({ width: 500, height: 900 })
 
-    const crawledData = []
-    this.totalItems = urls.length
-
-    for (const url of urls) {
-      if (this.history.find(match => match.url === url)) {
-        this.log(chalk.yellow(`Skipping: ${chalk.whiteBright.bold(url)}`))
-        continue
+      for (const url of urlsPerBrowser[i]) {
+        this.retries = 0
+        if (this.history.find(match => match.url === url)) {
+          this.log(chalk.yellow(`Skipping: ${chalk.whiteBright.bold(url)}`))
+          continue
+        }
+        const data = await this.crawlAndExtract(page, url)
+        if (data) {
+          crawledData.push(data)
+        }
       }
-      const data = await this.crawlAndExtract(page, url)
-      if (data) {
-        crawledData.push(data)
-      }
+
+      await this.contexts[i].close()
     }
 
-    await this.context.close()
     return crawledData
+  }
+
+  distributeUrls(urls) {
+    this.totalItems = urls.length
+    const urlsPerBrowser = Array(this.browsers.length).fill([])
+    for (let i = 0; i < urls.length; i++) {
+      urlsPerBrowser[i % this.browsers.length].push(urls[i])
+    }
+    return urlsPerBrowser
   }
 
   async readCSV(file) {

@@ -44,10 +44,8 @@ This repository serves the purpose of generating redirect targets for a CSV list
 
 - The input CSV file is assumed to have columns: `URL`, `Title`, `Season`, `Episode`, and `Show`.
 - Constants like `SEARCH_URL`, `SHOWS_URL`, `BRAND_FALLBACK`, `DATA_CSV`, `RESULT_CSV`, `MATCHES_CSV`, and `DEFAULT_CSV` can be adjusted based on the specific use case.
-
-- `matches.csv` is included to speed up matching of movies, documentaries, or specials but is not required.
-
 - See the included default `.csv` file for examples of the structure.
+- `matches.csv` is included to speed up matching of movies, documentaries, or specials but is not required.
 
 ## Credits
 
