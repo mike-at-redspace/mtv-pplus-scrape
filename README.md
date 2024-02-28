@@ -1,17 +1,10 @@
-# Paramount+ Target Finder
+# Redirect Target Generator for Paramount+
 
-This repository contains scripts for enhancing and scraping information from Paramount+ based on a CSV dataset.
-
-## Prerequisites
-
-- Node.js and Yarn installed
-- Dependencies installed: `yarn`
+This repository serves the purpose of generating redirect targets for a CSV list of URLs related to Paramount+. The process involves two primary Yarn tasks: `grab-clip-data` and `grab-season-data`. 
 
 ## Usage
 
-### Dataset Enhancement
-
-1. Navigate to the project directory:
+1. Start by navigating to the project directory:
 
     ```bash
     cd <project-directory>
@@ -23,45 +16,46 @@ This repository contains scripts for enhancing and scraping information from Par
     yarn install
     ```
 
-3. Run the enhancer:
+3. Run the tasks to prepare the data:
+
+    - To grab clip data:
+
+        ```bash
+        yarn grab-clip-data
+        ```
+
+    - To grab season data:
+
+        ```bash
+        yarn grab-season-data
+        ```
+
+4. Once the data is ready, execute the following command to generate the redirect targets:
 
     ```bash
-    node enhance.js
+    yarn get-pplus-urls
     ```
 
-4. The enhancer will read `raw.csv`, extract information from the 'URL' and 'Title' fields, add 'Season', 'Episode', and 'Show' columns, and generate `data.csv`.
-
-### Paramount+ Scraper
-
-1. Ensure the dataset is enhanced by running `enhance.js` as mentioned above.
-
-2. Install dependencies (if not already installed):
-
-    ```bash
-    node play.js
-    ```
-
-3. The scraper will process the input CSV file (`data.csv`), search Paramount+ for each title, and generate an output CSV file (`output.csv`) with matched URLs.
+5. **Profit!** The script will process the input CSV file, search Paramount+ for each title, and generate an output CSV file with matched URLs.
 
 ## Configuration
 
-### `enhance.js`
-
-- Input CSV file: `raw.csv`
-- Output CSV file: `output2.csv`
-
-### `play.js`
+### `get-pplus-urls.js`
 
 - The input CSV file is assumed to have columns: `URL`, `Title`, `Season`, `Episode`, and `Show`.
-- Constants like `SEARCH_URL`, `SHOWS_URL`, `BRAND_FALLBACK`, `DATA_CSV`, and `RESULT_CSV` can be adjusted based on the specific use case.
+- Constants like `SEARCH_URL`, `SHOWS_URL`, `BRAND_FALLBACK`, `DATA_CSV`, `RESULT_CSV`, `MATCHES_CSV`, and `DEFAULT_CSV` can be adjusted based on the specific use case.
+
+- `matches.csv` is included to speed up matching of movies, documentaries, or specials but is not required.
+
+- See the included default `.csv` file for examples of the structure.
 
 ## Credits
 
-- Playwright: [https://playwright.dev/](https://playwright.dev/)
-- string-similarity: [https://www.npmjs.com/package/string-similarity](https://www.npmjs.com/package/string-similarity)
-- chalk: [https://www.npmjs.com/package/chalk](https://www.npmjs.com/package/chalk)
-- csvtojson: [https://www.npmjs.com/package/csvtojson](https://www.npmjs.com/package/csvtojson)
-- json2csv: [https://www.npmjs.com/package/json2csv](https://www.npmjs.com/package/json2csv)
+- [Playwright](https://playwright.dev/)
+- [string-similarity](https://www.npmjs.com/package/string-similarity)
+- [chalk](https://www.npmjs.com/package/chalk)
+- [csvtojson](https://www.npmjs.com/package/csvtojson)
+- [json2csv](https://www.npmjs.com/package/json2csv)
 
 ## License
 

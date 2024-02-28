@@ -2,6 +2,7 @@ import { chromium } from 'playwright'
 import { compareTwoStrings } from 'string-similarity'
 import csv from 'csv-parser'
 import chalk from 'chalk'
+import inquirer from 'inquirer'
 import * as fs from 'fs'
 
 class Scraper {
@@ -12,6 +13,7 @@ class Scraper {
     this.SHOWS_URL = 'https://www.paramountplus.com/shows/'
     this.DATA_CSV = 'data.csv'
     this.RESULT_CSV = 'output.csv'
+    this.MATCHES_CSV = 'matches.csv'
     this.MIN_CONFIDENCE = 0.6
     this.MIN_SEARCH_LENGTH = 3
 
@@ -28,10 +30,37 @@ class Scraper {
 
   initialize = async () => {
     console.clear()
+    const { inputFile, outputFile } = await inquirer.prompt([
+      {
+        type: 'input',
+        name: 'inputFile',
+        message: 'Enter the input file name:',
+        default: this.DATA_CSV
+      },
+      {
+        type: 'input',
+        name: 'outputFile',
+        message: 'Enter the output file name:',
+        default: this.RESULT_CSV
+      }
+    ])
+    this.DATA_CSV = inputFile
+    this.RESULT_CSV = outputFile
     // uncomment for headless mode
     // this.browser = await chromium.launch()
     this.browser = await chromium.launch({ headless: false })
     this.page = await this.browser.newPage()
+
+    // load existing matches to speed up the process
+    try {
+      const data = await this.readCSV(this.MATCHES_CSV)
+      this.matchesList = data.map(row => ({
+        searchTerm: row.item,
+        bestMatch: row.url
+      }))
+    } catch (error) {
+      console.error('Error reading matches list:', error)
+    }
   }
 
   closeBrowser = async () => await this.browser.close()
@@ -78,7 +107,7 @@ class Scraper {
 
   scrape = async () => {
     try {
-      const data = await this.readCSV()
+      const data = await this.readCSV(this.DATA_CSV)
       this.totalRows = data.length
 
       for (let i = 0; i < data.length; i++) {
@@ -95,7 +124,7 @@ class Scraper {
 
   processRow = async () => {
     const { Show } = this.currentRow
-    const searchTerm = Show.replace(/\s+/g, ' ')
+    const searchTerm = Show?.replace(/\s+/g, ' ')
 
     if (this.notFoundList.includes(searchTerm)) {
       this.handleBrandFallback(searchTerm)
@@ -125,8 +154,17 @@ class Scraper {
 
   handleExistingMatch = async ({ bestMatch, searchTerm }) => {
     const { Title, Season, Episode, URL } = this.currentRow
-    this.writeOutput(Title, searchTerm, Season, Episode, URL, bestMatch)
-    await this.findEpisodeTarget(bestMatch)
+    if (bestMatch.includes?.('/video/')) {
+      this.log(
+        chalk.greenBright(
+          `Identified video link for ${chalk.white.bold(searchTerm)}: ${chalk.white.bold(bestMatch)}`
+        )
+      )
+      this.writeOutput(Title, searchTerm, Season, Episode, URL, bestMatch)
+    } else {
+      this.writeOutput(Title, searchTerm, Season, Episode, URL, bestMatch)
+      await this.findEpisodeTarget(bestMatch)
+    }
   }
 
   isErrorPage = async () => {
@@ -222,8 +260,11 @@ class Scraper {
   }
 
   findEpisodeTarget = async bestMatch => {
-    const { Episode, Season } = this.currentRow
+    const { URL, Title, Episode, Season, Show } = this.currentRow
     if (!Episode || !Season || !bestMatch) {
+      if (bestMatch) {
+        this.writeOutput(Title, Show, Season, Episode, URL, bestMatch)
+      }
       return
     }
 
@@ -320,10 +361,10 @@ class Scraper {
     console.log(`${progressBar} ${message}`)
   }
 
-  readCSV = async () => {
+  readCSV = async file => {
     const data = []
     return new Promise((resolve, reject) => {
-      fs.createReadStream(this.DATA_CSV)
+      fs.createReadStream(file)
         .pipe(csv())
         .on('data', row => data.push(row))
         .on('end', () => resolve(data))
