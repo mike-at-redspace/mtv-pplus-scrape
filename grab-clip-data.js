@@ -1,5 +1,5 @@
 import { chromium } from 'playwright'
-import { createReadStream } from 'fs'
+import { createReadStream, existsSync } from 'fs'
 import fs from 'fs/promises'
 import inquirer from 'inquirer'
 import csv from 'csv-parser'
@@ -14,13 +14,12 @@ class Crawler {
     this.contexts = []
     this.history = []
     this.retries = []
+    this.errors = []
     this.currentItem = 0
     this.totalItems = 0
   }
 
-  async initializeBrowser() {
-    this.browser = await chromium.launch()
-  }
+  initializeBrowser = async () => (this.browser = await chromium.launch())
 
   async closeBrowser() {
     if (this.browser) {
@@ -29,22 +28,39 @@ class Crawler {
   }
 
   async promptUser() {
+    const isCSVFile = filename => filename.trim().toLowerCase().endsWith('.csv')
     return await inquirer.prompt([
       {
         type: 'input',
         name: 'inputFile',
         message: 'Enter the input CSV file name:',
         default: 'clips.csv',
-        validate: value =>
-          value.trim() !== '' ? true : 'Please enter a valid input file name.'
+        validate: filename => {
+          if (!isCSVFile(filename)) {
+            return chalk.red('Please enter a valid input file name.')
+          }
+          if (!existsSync(filename)) {
+            return chalk.red('The input file does not exist.')
+          }
+          return true
+        }
       },
       {
         type: 'input',
         name: 'outputFile',
         message: 'Enter the output CSV file name:',
         default: 'titled-clips.csv',
-        validate: value =>
-          value.trim() !== '' ? true : 'Please enter a valid output file name.'
+        validate: filename => {
+          if (!isCSVFile(filename)) {
+            return chalk.red('Please enter a valid output file name.')
+          }
+          if (existsSync(filename)) {
+            return chalk.red(
+              'The output file already exists. Please enter a different name.'
+            )
+          }
+          return true
+        }
       }
     ])
   }
@@ -61,7 +77,7 @@ class Crawler {
 
   /**
    * Performs the crawling and data extraction. Navigates to the given URL,
-   * checks for 404 and 500 errors, and extracts the title from the page.
+   * checks for 404, 500 an other errors, and extracts the title from the page.
    * Retries up to MAX_RETRIES in case of errors before logging the error and moving on.
    *
    * @param {Page} page - The page object to use for crawling.
@@ -72,8 +88,17 @@ class Crawler {
   async crawlAndExtract(page, url, i) {
     this.log(chalk.blueBright(`Crawling: ${chalk.white.bold(url)}`))
     try {
+      const shortId = url.split('/').pop()
       this.retries[i]++
-      await page.goto(url)
+      await page
+        .goto(url, { timeout: 15000, waitUntil: 'domcontentloaded' })
+        .catch(({ message }) => {
+          if (message.includes('ERR_TOO_MANY_REDIRECTS')) {
+            this.retries[i] = this.MAX_RETRIES
+          }
+          const error = message.split('\n')?.[0] ?? message
+          throw new Error(error)
+        })
       if (await this.is404Page(page)) {
         this.retries[i] = this.MAX_RETRIES
         throw new Error('404 Error')
@@ -82,29 +107,33 @@ class Crawler {
         throw new Error('500 Error')
       }
       const titleElement = await page.waitForSelector('.title-wrap > a > div', {
-        timeout: 600
+        timeout: 1000
       })
       const title = await titleElement.textContent()
       if (!title) {
         throw new Error('Title not found')
       }
-      this.log(chalk.greenBright(`Title found: ${chalk.white.bold(title)}`))
+      this.log(
+        chalk.greenBright(
+          `Show title for clip ${chalk.white.bold(shortId)} found after ${chalk.white.bold(this.retries[i])} attempt${this.retries[i] > 1 ? 's' : ''}: ${chalk.white.bold(title)}`
+        )
+      )
       this.history.push({ url, title })
       this.currentItem++
       return { Title: title, Show: title, URL: url }
-    } catch (error) {
+    } catch ({ message }) {
+      const error = message.split('\n')?.[0] ?? message
       if (this.retries[i] < this.MAX_RETRIES) {
         this.log(
           chalk.yellow(
-            `${error.message} Retrying (${this.retries[i]}/${this.MAX_RETRIES}) for: ${chalk.white.bold(url)}`
+            `Retry ${this.retries[i]}/${this.MAX_RETRIES} for ${chalk.white.bold(url)}: ${error}`
           )
         )
         return this.crawlAndExtract(page, url, i)
       } else {
-        this.log(
-          chalk.red(`Error crawling ${chalk.white.bold(url)}: ${error.message}`)
-        )
+        this.log(chalk.red(`Error crawling ${chalk.white.bold(url)}: ${error}`))
         this.history.push({ url })
+        this.errors.push({ url, error: error })
         this.currentItem++
       }
 
@@ -226,7 +255,7 @@ class Crawler {
     const incompleteString = progressString.slice(completedWidth)
     const completePercentagePart = chalk.bgRgb(73, 215, 97).bold(completeString)
     const incompletePercentagePart = chalk
-      .bgRgb(0, 102, 219)
+      .bgRgb(1, 100, 255)
       .bold(incompleteString)
 
     return `${completePercentagePart}${incompletePercentagePart}`
@@ -237,11 +266,15 @@ class Crawler {
     console.log(`${progressBar} ${message}`)
   }
 
+  splashScreen = () =>
+    createReadStream('pplus-logo.txt', { encoding: 'utf8' }).on('data', data => console.log(chalk.bgRgb(1, 100, 255).bold(data)))
+
   async main() {
     console.clear()
     try {
       const { inputFile, outputFile } = await this.promptUser()
-
+      this.splashScreen()
+      console.log('\n\n\n')
       await this.initializeBrowser()
 
       const parsedCsv = await this.readCSV(inputFile)
@@ -258,6 +291,19 @@ class Crawler {
           `Crawling and extraction complete. Output saved to ${chalk.white.bold(outputFile)}`
         )
       )
+      if (this.errors.length > 0) {
+        const errorCount = this.errors.length
+        const errorLogFile = outputFile.replace('.csv', '-error-log.csv')
+        const errorLog = await parseAsync(this.errors, {
+          fields: ['url', 'error']
+        })
+        await fs.writeFile(errorLogFile, errorLog)
+        this.log(
+          chalk.redBright(
+            `${chalk.white.bold(errorCount)} Error${errorCount > 1 ? 's' : ''} found. Error log saved to ${chalk.white.bold(errorLogFile)}`
+          )
+        )
+      }
     } catch (error) {
       console.error(chalk.red(`Error: ${error.message}`))
     } finally {

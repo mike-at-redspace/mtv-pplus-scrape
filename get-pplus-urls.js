@@ -29,6 +29,7 @@ class Scraper {
 
   initialize = async () => {
     console.clear()
+    const isCSVFile = file => file.trim().toLowerCase().endsWith('.csv')
     const { inputFile, outputFile } = await inquirer.prompt([
       {
         type: 'input',
@@ -36,7 +37,7 @@ class Scraper {
         message: 'Enter the input file name:',
         default: this.DATA_CSV,
         validate: value =>
-          value.trim() !== '' ? true : 'Please enter a valid output file name.'
+          isCSVFile(value) ? true : 'Please enter a valid output file name.'
       },
       {
         type: 'input',
@@ -44,13 +45,14 @@ class Scraper {
         message: 'Enter the output file name:',
         default: this.RESULT_CSV,
         validate: value =>
-          value.trim() !== '' ? true : 'Please enter a valid output file name.'
+          isCSVFile(value) ? true : 'Please enter a valid output file name.'
       }
     ])
     this.DATA_CSV = inputFile
     this.RESULT_CSV = outputFile
     // uncomment for headless mode
     // this.browser = await chromium.launch()
+    this.splashScreen()
     this.browser = await chromium.launch({ headless: false })
     this.page = await this.browser.newPage()
 
@@ -341,6 +343,9 @@ class Scraper {
     )
   }
 
+  splashScreen = () =>
+    createReadStream('pplus-logo.txt', { encoding: 'utf8' }).on('data', data => console.log(chalk.bgRgb(1, 100, 255).bold(data)))
+
   getProgressBar = () => {
     const progressBarWidth = 20
     const progress =
@@ -359,7 +364,7 @@ class Scraper {
     const incompleteString = progressString.slice(completedWidth)
     const completePercentagePart = chalk.bgRgb(73, 215, 97).bold(completeString)
     const incompletePercentagePart = chalk
-      .bgRgb(0, 102, 219)
+      .bgRgb(1, 100, 255)
       .bold(incompleteString)
 
     return `${completePercentagePart}${incompletePercentagePart}`
