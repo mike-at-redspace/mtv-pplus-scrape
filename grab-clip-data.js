@@ -267,7 +267,9 @@ class Crawler {
   }
 
   splashScreen = () =>
-    createReadStream('pplus-logo.txt', { encoding: 'utf8' }).on('data', data => console.log(chalk.bgRgb(1, 100, 255).bold(data)))
+    createReadStream('pplus-logo.txt', { encoding: 'utf8' }).on('data', data =>
+      console.log(chalk.bgRgb(1, 100, 255).bold(data))
+    )
 
   async main() {
     console.clear()

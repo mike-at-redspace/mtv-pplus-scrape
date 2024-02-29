@@ -3,6 +3,7 @@ import { compareTwoStrings } from 'string-similarity'
 import csv from 'csv-parser'
 import chalk from 'chalk'
 import inquirer from 'inquirer'
+import { createReadStream, existsSync } from 'fs'
 import * as fs from 'fs'
 
 class Scraper {
@@ -11,10 +12,10 @@ class Scraper {
     this.FALLBACK_URL = 'https://www.paramountplus.com/brands/mtv/'
     this.SEARCH_URL = 'https://www.paramountplus.com/search/'
     this.SHOWS_URL = 'https://www.paramountplus.com/shows/'
-    this.DATA_CSV = 'data.csv'
-    this.RESULT_CSV = 'output.csv'
+    this.DATA_CSV = 'titled-clips-sorted.csv'
+    this.RESULT_CSV = 'clip-redirects.csv'
     this.MATCHES_CSV = 'matches.csv'
-    this.MIN_CONFIDENCE = 0.6
+    this.MIN_CONFIDENCE = 0.58
     this.MIN_SEARCH_LENGTH = 3
 
     // instance variables
@@ -25,6 +26,7 @@ class Scraper {
     this.currentRow = null
     this.totalRows = 0
     this.completedRows = 0
+    this.lastLog = ''
   }
 
   initialize = async () => {
@@ -36,16 +38,32 @@ class Scraper {
         name: 'inputFile',
         message: 'Enter the input file name:',
         default: this.DATA_CSV,
-        validate: value =>
-          isCSVFile(value) ? true : 'Please enter a valid output file name.'
+        validate: filename => {
+          if (!isCSVFile(filename)) {
+            return chalk.red('Please enter a valid input file name.')
+          }
+          if (!existsSync(filename)) {
+            return chalk.red('The input file does not exist.')
+          }
+          return true
+        }
       },
       {
         type: 'input',
         name: 'outputFile',
         message: 'Enter the output file name:',
         default: this.RESULT_CSV,
-        validate: value =>
-          isCSVFile(value) ? true : 'Please enter a valid output file name.'
+        validate: filename => {
+          if (!isCSVFile(filename)) {
+            return chalk.red('Please enter a valid output file name.')
+          }
+          if (existsSync(filename)) {
+            return chalk.red(
+              'The output file already exists. Please enter a different name.'
+            )
+          }
+          return true
+        }
       }
     ])
     this.DATA_CSV = inputFile
@@ -191,7 +209,6 @@ class Scraper {
       this.log(
         chalk.red(`No optimal match found for ${chalk.white.bold(Title)}`)
       )
-
       this.writeOutput(
         Title,
         searchTerm,
@@ -200,6 +217,7 @@ class Scraper {
         URL,
         this.FALLBACK_URL
       )
+      this.notFoundList.push(searchTerm)
     } else {
       this.log(
         chalk.greenBright(
@@ -344,13 +362,15 @@ class Scraper {
   }
 
   splashScreen = () =>
-    createReadStream('pplus-logo.txt', { encoding: 'utf8' }).on('data', data => console.log(chalk.bgRgb(1, 100, 255).bold(data)))
+    createReadStream('pplus-logo.txt', { encoding: 'utf8' }).on('data', data =>
+      console.log(chalk.bgRgb(1, 100, 255).bold(data))
+    )
 
   getProgressBar = () => {
     const progressBarWidth = 20
     const progress =
-      this.totalItems > 0
-        ? Math.floor((this.currentItem / this.totalItems) * 100)
+      this.totalRows > 0
+        ? Math.floor((this.completedRows / this.totalRows) * 100)
         : 0
     const percentageString = `${this.completedRows}/${this.totalRows} ${progress}%`
     const padLength = Math.max(
@@ -358,7 +378,9 @@ class Scraper {
       Math.ceil((progressBarWidth - percentageString.length) / 2)
     )
     const padding = ' '.repeat(padLength)
-    const progressString = `${padding}${percentageString}${' '.repeat(progressBarWidth - percentageString.length - padLength)}`
+    const progressString = `${padding}${percentageString}${' '.repeat(
+      progressBarWidth - percentageString.length - padLength
+    )}`
     const completedWidth = Math.floor((progress / 100) * progressBarWidth)
     const completeString = progressString.slice(0, completedWidth)
     const incompleteString = progressString.slice(completedWidth)
@@ -372,7 +394,10 @@ class Scraper {
 
   log = message => {
     const progressBar = this.getProgressBar()
-    console.log(`${progressBar} ${message}`)
+    if (this.lastLog !== message) {
+      console.log(`${progressBar} ${message}`)
+      this.lastLog = message
+    }
   }
 
   readCSV = async file => {
