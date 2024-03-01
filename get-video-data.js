@@ -286,7 +286,7 @@ class Crawler {
     const incompleteString = progressString.slice(completedWidth)
     const completePercentagePart = chalk.bgRgb(73, 215, 97).bold(completeString)
     const incompletePercentagePart = chalk
-      .bgRgb(1, 100, 255)
+      .bgBlueBright
       .bold(incompleteString)
 
     return `${completePercentagePart}${incompletePercentagePart}`
@@ -301,8 +301,8 @@ class Crawler {
   }
 
   splashScreen = async () =>
-    createReadStream('pplus-logo.txt', { encoding: 'utf8' }).on('data', data =>
-      console.log(chalk.bgRgb(1, 100, 255).bold(data))
+    createReadStream('webplex-logo.txt', { encoding: 'utf8' }).on('data', data =>
+      console.log(chalk.blueBright.bold(data))
     )
 
   sortResults = records =>
