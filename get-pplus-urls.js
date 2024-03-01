@@ -41,33 +41,30 @@ class Scraper {
 
   findBestMatch = (searchTerm, urlList) => {
     const normalizedInput = this.slugify(searchTerm)
-    let bestMatch = null
-    let highestScore = 0
+    const bestMatch = urlList.reduce(
+      (best, url) => {
+        const normalizedUrl = url
+          .toLowerCase()
+          .replace(this.SHOWS_URL, '')
+          .replace(/\/$/, '')
+        const score = compareTwoStrings(normalizedInput, normalizedUrl)
+        return score > this.MIN_CONFIDENCE && score > best.score
+          ? { url, score }
+          : best
+      },
+      { score: 0 }
+    )
 
-    for (const url of urlList) {
-      const normalizedUrl = url
-        .toLowerCase()
-        .replace(this.SHOWS_URL, '')
-        .replace(/\/$/, '')
-
-      const score = compareTwoStrings(normalizedInput, normalizedUrl)
-
-      if (score > this.MIN_CONFIDENCE && score > highestScore) {
-        bestMatch = url
-        highestScore = score
-      }
-    }
-
-    if (bestMatch) {
-      this.matchesList.push({ searchTerm, bestMatch })
+    if (bestMatch.score > 0) {
+      this.matchesList.push({ searchTerm, bestMatch: bestMatch.url })
       this.log(
         chalk.greenBright(
-          `Best match for ${chalk.white.bold(searchTerm)} is ${chalk.white.bold(bestMatch)} with a score of ${chalk.white.bold(Math.round(highestScore * 100))}%`
+          `Best match for ${chalk.white.bold(searchTerm)} is ${chalk.white.bold(bestMatch.url)} with a score of ${chalk.white.bold(Math.round(bestMatch.score * 100))}%`
         )
       )
     }
 
-    return bestMatch
+    return bestMatch.url
   }
 
   scrape = async () => {
@@ -91,16 +88,15 @@ class Scraper {
     const { Show } = this.currentRow
     const searchTerm = Show?.replace(/\s+/g, ' ')
 
-    if (this.notFoundList.includes(searchTerm)) {
-      this.handleBrandFallback(searchTerm)
-    } else {
+    if (!this.notFoundList.includes(searchTerm)) {
       const existingMatch = this.findExistingMatch(searchTerm)
-
       if (existingMatch) {
         await this.handleExistingMatch(existingMatch)
       } else {
         await this.searchProperty(searchTerm)
       }
+    } else {
+      this.handleBrandFallback(searchTerm)
     }
   }
 
@@ -363,6 +359,17 @@ class Scraper {
         .on('error', error => reject(error))
     })
   }
+
+  sortResults = records =>
+    records.sort((a, b) => {
+      if (a['Title'] < b['Title']) return -1
+      if (a['Title'] > b['Title']) return 1
+      if (parseInt(a['Season']) < parseInt(b['Season'])) return -1
+      if (parseInt(a['Season']) > parseInt(b['Season'])) return 1
+      if (parseInt(a['Episode']) < parseInt(b['Episode'])) return -1
+      if (parseInt(a['Episode']) > parseInt(b['Episode'])) return 1
+      return 0
+    })
 
   initialize = async () => {
     console.clear()
