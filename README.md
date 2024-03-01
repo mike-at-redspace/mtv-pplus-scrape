@@ -1,51 +1,29 @@
 # Redirect Target Generator for Paramount+
 
-This repository serves the purpose of generating redirect targets for a CSV list of URLs related to Paramount+. The process involves two primary Yarn tasks: `grab-clip-data` and `grab-season-data`. 
+This repository serves the purpose of generating redirect targets for a CSV list of URLs related to Paramount+.
 
 ## Usage
 
-1. Start by navigating to the project directory:
+### `yarn get-video-data`
+Crawls a CSV of URLs to video endpages, movies, specials, episodes, or clips and generates a CSV or rich metadata.
 
-    ```bash
-    cd <project-directory>
-    ```
+| Constant         | Description                                                  |
+| ---------------- | ------------------------------------------------------------ |
+| `MAX_RETRIES`    | Maximum number of retries                 |
+| `MAX_SESSIONS`   | Maximum number of concurrent browser sessions for crawling   |
 
-2. Install dependencies:
 
-    ```bash
-    yarn install
-    ```
+### `yarn get-pplus-urls`
+Takes output from `get-video-data` and attempts to find the best match on P+ and generates a CSV of redirects for Akamai.
 
-3. Run the tasks to prepare the data:
+| Constant           | Description                                          |
+| ------------------ | ---------------------------------------------------- |
+| `SEARCH_URL`       | URL for searching on P+ to find the best match       |
+| `SHOWS_URL`        | URL for fetching information about shows on P+       |
+| `BRAND_FALLBACK`   | Fallback value for brand when not found on P+        |
+| `MATCHES_CSV`      | CSV seed matches of permalinks to speed things up    |
 
-    - To grab clip data:
-
-        ```bash
-        yarn grab-clip-data
-        ```
-
-    - To grab season data:
-
-        ```bash
-        yarn grab-season-data
-        ```
-
-4. Once the data is ready, execute the following command to generate the redirect targets:
-
-    ```bash
-    yarn get-pplus-urls
-    ```
-
-5. **Profit!** The script will process the input CSV file, search Paramount+ for each title, and generate an output CSV file with matched URLs.
-
-## Configuration
-
-### `get-pplus-urls.js`
-
-- The input CSV file is assumed to have columns: `URL`, `Title`, `Season`, `Episode`, and `Show`.
-- Constants like `SEARCH_URL`, `SHOWS_URL`, `BRAND_FALLBACK`, `DATA_CSV`, `RESULT_CSV`, `MATCHES_CSV`, and `DEFAULT_CSV` can be adjusted based on the specific use case.
-- See the included default `.csv` file for examples of the structure.
-- `matches.csv` is included to speed up matching of movies, documentaries, or specials but is not required.
+---
 
 ## Credits
 

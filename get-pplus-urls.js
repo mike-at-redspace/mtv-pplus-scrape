@@ -8,82 +8,24 @@ import * as fs from 'fs'
 
 class Scraper {
   constructor() {
-    // constants
     this.FALLBACK_URL = 'https://www.paramountplus.com/brands/mtv/'
     this.SEARCH_URL = 'https://www.paramountplus.com/search/'
     this.SHOWS_URL = 'https://www.paramountplus.com/shows/'
-    this.DATA_CSV = 'titled-clips-sorted.csv'
-    this.RESULT_CSV = 'clip-redirects.csv'
+    this.DATA_CSV = 'titled-epsiodes.csv'
+    this.RESULT_CSV = 'epsiodes-redirects.csv'
     this.MATCHES_CSV = 'matches.csv'
     this.MIN_CONFIDENCE = 0.58
     this.MIN_SEARCH_LENGTH = 3
 
-    // instance variables
     this.browser = null
     this.page = null
     this.notFoundList = []
+    this.missingShows = []
     this.matchesList = []
     this.currentRow = null
     this.totalRows = 0
     this.completedRows = 0
     this.lastLog = ''
-  }
-
-  initialize = async () => {
-    console.clear()
-    const isCSVFile = file => file.trim().toLowerCase().endsWith('.csv')
-    const { inputFile, outputFile } = await inquirer.prompt([
-      {
-        type: 'input',
-        name: 'inputFile',
-        message: 'Enter the input file name:',
-        default: this.DATA_CSV,
-        validate: filename => {
-          if (!isCSVFile(filename)) {
-            return chalk.red('Please enter a valid input file name.')
-          }
-          if (!existsSync(filename)) {
-            return chalk.red('The input file does not exist.')
-          }
-          return true
-        }
-      },
-      {
-        type: 'input',
-        name: 'outputFile',
-        message: 'Enter the output file name:',
-        default: this.RESULT_CSV,
-        validate: filename => {
-          if (!isCSVFile(filename)) {
-            return chalk.red('Please enter a valid output file name.')
-          }
-          if (existsSync(filename)) {
-            return chalk.red(
-              'The output file already exists. Please enter a different name.'
-            )
-          }
-          return true
-        }
-      }
-    ])
-    this.DATA_CSV = inputFile
-    this.RESULT_CSV = outputFile
-    // uncomment for headless mode
-    // this.browser = await chromium.launch()
-    this.splashScreen()
-    this.browser = await chromium.launch({ headless: false })
-    this.page = await this.browser.newPage()
-
-    // load existing matches to speed up the process
-    try {
-      const data = await this.readCSV(this.MATCHES_CSV)
-      this.matchesList = data.map(row => ({
-        searchTerm: row.item,
-        bestMatch: row.url
-      }))
-    } catch (error) {
-      console.error('Error reading matches list:', error)
-    }
   }
 
   closeBrowser = async () => await this.browser.close()
@@ -139,7 +81,8 @@ class Scraper {
         await this.processRow()
         this.completedRows = i + 1
       }
-    } catch (error) {
+    } catch ({ message }) {
+      const error = message.split('\n')?.[0] ?? message
       console.error('Error during scraping:', error)
     }
   }
@@ -269,7 +212,7 @@ class Scraper {
   }
 
   gotoSeason = async seasonUrl => {
-    if (!this.page.url().includes(seasonUrl)) {
+    if (this.page.url().trim() !== seasonUrl.trim()) {
       this.log(
         chalk.magenta(`Identified season link: ${chalk.white.bold(seasonUrl)}`)
       )
@@ -291,9 +234,18 @@ class Scraper {
     }
 
     const seasonUrl = `${bestMatch}episodes/${Season}/`
+    if (this.notFoundList.includes(seasonUrl)) {
+      this.log(
+        chalk.magentaBright(
+          `Skipped ${chalk.white.bold(seasonUrl)} as it was not found previously`
+        )
+      )
+      return
+    }
     await this.gotoSeason(seasonUrl)
 
     if (await this.isErrorPage()) {
+      this.notFoundList.push(seasonUrl)
       this.log(
         chalk.red(`Error page found for ${chalk.whiteBright.bold(seasonUrl)}`)
       )
@@ -325,10 +277,11 @@ class Scraper {
           }
         }
       }
-    } catch (error) {
+    } catch ({ message }) {
+      const error = message.split('\n')?.[0] ?? message
       this.log(
         chalk.red(
-          `Error finding and processing episode: ${chalk.whiteBright.bold(error.message)}`
+          `Error finding and processing episode: ${chalk.whiteBright.bold(error)}`
         )
       )
     }
@@ -409,6 +362,63 @@ class Scraper {
         .on('end', () => resolve(data))
         .on('error', error => reject(error))
     })
+  }
+
+  initialize = async () => {
+    console.clear()
+    const isCSVFile = file => file.trim().toLowerCase().endsWith('.csv')
+    const { inputFile, outputFile } = await inquirer.prompt([
+      {
+        type: 'input',
+        name: 'inputFile',
+        message: 'Enter the input file name:',
+        default: this.DATA_CSV,
+        validate: filename => {
+          if (!isCSVFile(filename)) {
+            return chalk.red('Please enter a valid input file name.')
+          }
+          if (!existsSync(filename)) {
+            return chalk.red('The input file does not exist.')
+          }
+          return true
+        }
+      },
+      {
+        type: 'input',
+        name: 'outputFile',
+        message: 'Enter the output file name:',
+        default: this.RESULT_CSV,
+        validate: filename => {
+          if (!isCSVFile(filename)) {
+            return chalk.red('Please enter a valid output file name.')
+          }
+          if (existsSync(filename)) {
+            return chalk.red(
+              'The output file already exists. Please enter a different name.'
+            )
+          }
+          return true
+        }
+      }
+    ])
+    this.DATA_CSV = inputFile
+    this.RESULT_CSV = outputFile
+    // uncomment for headless mode
+    // this.browser = await chromium.launch()
+    this.splashScreen()
+    this.browser = await chromium.launch({ headless: false })
+    this.page = await this.browser.newPage()
+
+    // load existing matches to speed up the process
+    try {
+      const data = await this.readCSV(this.MATCHES_CSV)
+      this.matchesList = data.map(row => ({
+        searchTerm: row.item,
+        bestMatch: row.url
+      }))
+    } catch (error) {
+      console.error('Error reading matches list:', error)
+    }
   }
 }
 

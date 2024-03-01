@@ -6,8 +6,7 @@
   "type": "module",
   "scripts": {
     "format": "prettier --write \"*.js\"",
-    "grab-clip-data": "node grab-clip-data.js",
-    "grab-season-data": "node grab-season-data.js",
+    "get-video-data": "node get-video-data.js",
     "get-pplus-urls": "node get-pplus-urls.js",
     "precommit": "lint-staged"
   },
