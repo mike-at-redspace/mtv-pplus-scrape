@@ -68,7 +68,7 @@ class Scraper {
   }
 
   scrape = async () => {
-    try {
+
       const data = await this.readCSV(this.DATA_CSV)
       this.totalRows = data.length
 
@@ -78,10 +78,7 @@ class Scraper {
         await this.processRow()
         this.completedRows = i + 1
       }
-    } catch ({ message }) {
-      const error = message.split('\n')?.[0] ?? message
-      console.error('Error during scraping:', error)
-    }
+   
   }
 
   processRow = async () => {
@@ -91,7 +88,7 @@ class Scraper {
     if (!this.notFoundList.includes(searchTerm)) {
       const existingMatch = this.findExistingMatch(searchTerm)
       if (existingMatch) {
-        await this.handleExistingMatch(existingMatch)
+        await this.handleExistingMatch(existingMatch, searchTerm)
       } else {
         await this.searchProperty(searchTerm)
       }
@@ -274,7 +271,7 @@ class Scraper {
       }
     } catch ({ message }) {
       const error = message.split('\n')?.[0] ?? message
-      this.writeOutput(Title, searchTerm, Season, Episode, URL, bestMatch)
+      this.writeOutput(Title, Show, Season, Episode, URL, bestMatch)
       this.log(
         chalk.red(
           `Error finding and processing episode: ${chalk.whiteBright.bold(error)}`
@@ -412,6 +409,7 @@ class Scraper {
     this.RESULT_CSV = outputFile
     // uncomment for headless mode
     // this.browser = await chromium.launch()
+    console.clear()
     this.splashScreen()
     this.browser = await chromium.launch({ headless: false })
     this.page = await this.browser.newPage()
