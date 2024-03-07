@@ -20,7 +20,7 @@ class Crawler {
     this.lastLog = ''
   }
 
-  initializeBrowser = async () => (this.browser = await chromium.launch())
+  initializeBrowser = async () => (this.browser = await chromium.launch({ headless: false }))
 
   async closeBrowser() {
     if (this.browser) {
@@ -121,7 +121,7 @@ class Crawler {
         throw new Error('500 Error')
       }
       const titleElement = await page.waitForSelector('.title-wrap > a > div', {
-        timeout: 1000
+        timeout: 10000
       })
       const title = await titleElement.textContent()
       if (!title) {

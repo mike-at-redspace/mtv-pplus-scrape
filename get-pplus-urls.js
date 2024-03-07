@@ -11,8 +11,8 @@ class Scraper {
     this.FALLBACK_URL = 'https://www.paramountplus.com/brands/mtv/'
     this.SEARCH_URL = 'https://www.paramountplus.com/search/'
     this.SHOWS_URL = 'https://www.paramountplus.com/shows/'
-    this.DATA_CSV = 'titled-epsiodes.csv'
-    this.RESULT_CSV = 'epsiodes-redirects.csv'
+    this.DATA_CSV = 'titled-episodes.csv'
+    this.RESULT_CSV = 'episodes-redirects.csv'
     this.MATCHES_CSV = 'matches.csv'
     this.MIN_CONFIDENCE = 0.58
     this.MIN_SEARCH_LENGTH = 3
@@ -123,7 +123,6 @@ class Scraper {
       )
       this.writeOutput(Title, searchTerm, Season, Episode, URL, bestMatch)
     } else {
-      this.writeOutput(Title, searchTerm, Season, Episode, URL, bestMatch)
       await this.findEpisodeTarget(bestMatch)
     }
   }
@@ -156,7 +155,7 @@ class Scraper {
         URL,
         this.FALLBACK_URL
       )
-      this.notFoundList.push(searchTerm)
+      this.notFoundList.push(searchTerm.trim())
     } else {
       this.log(
         chalk.greenBright(
@@ -193,7 +192,7 @@ class Scraper {
           )
         )
         i = searchTerm.length
-        this.notFoundList.push(searchTerm)
+        this.notFoundList.push(searchTerm.trim())
         continue
       }
 
@@ -275,6 +274,7 @@ class Scraper {
       }
     } catch ({ message }) {
       const error = message.split('\n')?.[0] ?? message
+      this.writeOutput(Title, searchTerm, Season, Episode, URL, bestMatch)
       this.log(
         chalk.red(
           `Error finding and processing episode: ${chalk.whiteBright.bold(error)}`
