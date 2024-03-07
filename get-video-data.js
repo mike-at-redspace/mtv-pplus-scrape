@@ -9,7 +9,7 @@ import chalk from 'chalk'
 class Crawler {
   constructor() {
     this.MAX_RETRIES = 3
-    this.MAX_SESSIONS = 5
+    this.MAX_SESSIONS = 10
     this.browser = null
     this.contexts = []
     this.history = []
@@ -20,7 +20,7 @@ class Crawler {
     this.lastLog = ''
   }
 
-  initializeBrowser = async () => (this.browser = await chromium.launch({ headless: false }))
+  initializeBrowser = async () => (this.browser = await chromium.launch())
 
   async closeBrowser() {
     if (this.browser) {
@@ -182,21 +182,44 @@ class Crawler {
   async crawlAllUrls(urls) {
     const crawledData = []
 
-    for (let i = 0; i < this.MAX_SESSIONS; i++) {
-      this.contexts[i] = await this.browser.newContext()
-    }
+    // Create a single browser context
+    const context = await this.browser.newContext()
 
+    // Generate the queue as before
     const queueGenerator = this.generateQueue(urls)
 
-    const processingPromises = this.contexts.map(async context => {
-      crawledData.push(...(await this.processQueue(queueGenerator, context)))
-    })
+    // Process the queue with multiple pages (tabs)
+    const processingPromises = Array.from({ length: this.MAX_SESSIONS }).map(
+      async () => {
+        const page = await context.newPage({ javaScriptEnabled: false })
+        await page.setViewportSize({ width: 500, height: 900 })
+
+        for await (const { URL, index } of queueGenerator) {
+          this.retries[index] = 0
+          if (this.history.find(match => match.URL === URL)) {
+            this.log(
+              chalk.yellowBright(
+                `Skipping: ${chalk.white.bold(URL)} (already crawled)`
+              )
+            )
+            continue
+          }
+
+          const data = await this.crawlAndExtract(page, URL, index)
+
+          if (data) {
+            crawledData.push(data)
+          }
+        }
+
+        await page.close()
+      }
+    )
 
     await Promise.all(processingPromises)
 
-    for (const context of this.contexts) {
-      await context.close()
-    }
+    // Close the context
+    await context.close()
 
     return crawledData
   }
