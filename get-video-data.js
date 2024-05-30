@@ -10,6 +10,9 @@ class Crawler {
   constructor() {
     this.MAX_RETRIES = 3
     this.MAX_SESSIONS = 10
+    this.inputFile = 'cmt-clips-2nd-run.csv'
+    this.outputFile = 'cmt-clips-titled-2.csv'
+    this.headless = true
     this.browser = null
     this.contexts = []
     this.history = []
@@ -20,7 +23,7 @@ class Crawler {
     this.lastLog = ''
   }
 
-  initializeBrowser = async () => (this.browser = await chromium.launch())
+  initializeBrowser = async () => (this.browser = await chromium.launch({ headless: this.headless }))
 
   async closeBrowser() {
     if (this.browser) {
@@ -35,7 +38,7 @@ class Crawler {
         type: 'input',
         name: 'inputFile',
         message: 'Enter the input CSV file name:',
-        default: 'raw-episodes.csv',
+        default: this.inputFile,
         validate: filename => {
           if (!isCSVFile(filename)) {
             return chalk.red('Please enter a valid input file name.')
@@ -50,7 +53,7 @@ class Crawler {
         type: 'input',
         name: 'outputFile',
         message: 'Enter the output CSV file name:',
-        default: 'titled-epsiodes.csv',
+        default: this.outputFile,
         validate: filename => {
           if (!isCSVFile(filename)) {
             return chalk.red('Please enter a valid output file name.')
@@ -77,7 +80,6 @@ class Crawler {
   }
 
   async extractSeasonEpisode(page) {
-    // Regular expression to match "Season X, Ep. Y"
     const regex = /Season (\d+), Ep\. (\d+)/
     const pageTitle = await page.title()
     const match = pageTitle.match(regex)
@@ -99,13 +101,13 @@ class Crawler {
    * @param {number} i - The index of the current session.
    * @returns {Promise<Object>} The extracted data from the page.
    */
-  async crawlAndExtract(page, URL, i) {
-    this.log(chalk.blueBright(`Crawling: ${chalk.white.bold(URL)}`))
+  async crawlAndExtract(page, url, i) {
+    this.log(chalk.blueBright(`Crawling: ${chalk.white.bold(url)}`))
     try {
-      const shortId = URL.split('/').pop()
+      const shortId = url.split('/').pop()
       this.retries[i]++
       await page
-        .goto(URL, { timeout: 15000, waitUntil: 'domcontentloaded' })
+        .goto(url, { timeout: 15000, waitUntil: 'domcontentloaded' })
         .catch(({ message }) => {
           if (message.includes('ERR_TOO_MANY_REDIRECTS')) {
             this.retries[i] = this.MAX_RETRIES
@@ -120,7 +122,7 @@ class Crawler {
       if (await this.is500Page(page)) {
         throw new Error('500 Error')
       }
-      const titleElement = await page.waitForSelector('.title-wrap > a > div', {
+      const titleElement = await page.waitForSelector('.title-wrap > a > div, [data-display-name="PlayerMetadata"] > p', {
         timeout: 10000
       })
       const title = await titleElement.textContent()
@@ -128,6 +130,7 @@ class Crawler {
         throw new Error('Title not found')
       }
       const { Season, Episode } = await this.extractSeasonEpisode(page)
+      const currentUrl = page.url()
 
       if (Season && Episode) {
         this.log(
@@ -142,13 +145,24 @@ class Crawler {
           )
         )
       }
-      this.history.push({ URL, title })
+      this.history.push({ URL: url, title })
+      if (url !== currentUrl) {
+        const { pathname } = new global.URL(currentUrl)
+        this.log(
+          chalk.yellow(
+            `Redirect detected for ${chalk.white.bold(url)} to ${chalk.white.bold(pathname)}`
+          )
+        )
+        
+        url = currentUrl
+        this.history.push({ URL: url, title })
+      }
       this.currentItem++
 
       return {
         Title: title,
         Show: title,
-        URL,
+        URL: url,
         Episode,
         Season
       }
@@ -157,14 +171,14 @@ class Crawler {
       if (this.retries[i] < this.MAX_RETRIES) {
         this.log(
           chalk.yellow(
-            `Retry ${this.retries[i]}/${this.MAX_RETRIES} for ${chalk.white.bold(URL)}: ${error}`
+            `Retry ${this.retries[i]}/${this.MAX_RETRIES} for ${chalk.white.bold(url)}: ${error}`
           )
         )
-        return this.crawlAndExtract(page, URL, i)
+        return this.crawlAndExtract(page, url, i)
       } else {
-        this.log(chalk.red(`Error crawling ${chalk.white.bold(URL)}: ${error}`))
-        this.history.push({ URL })
-        this.errors.push({ URL, error: error })
+        this.log(chalk.red(`Error crawling ${chalk.white.bold(url)}: ${error}`))
+        this.history.push({ URL: url })
+        this.errors.push({ URL: url, error: error })
         this.currentItem++
       }
 
@@ -181,18 +195,11 @@ class Crawler {
    */
   async crawlAllUrls(urls) {
     const crawledData = []
-
-    // Create a single browser context
     const context = await this.browser.newContext()
-
-    // Generate the queue as before
     const queueGenerator = this.generateQueue(urls)
-
-    // Process the queue with multiple pages (tabs)
     const processingPromises = Array.from({ length: this.MAX_SESSIONS }).map(
       async () => {
-        const page = await context.newPage({ javaScriptEnabled: false })
-        await page.setViewportSize({ width: 500, height: 900 })
+        const page = await context.newPage()
 
         for await (const { URL, index } of queueGenerator) {
           this.retries[index] = 0
@@ -217,8 +224,6 @@ class Crawler {
     )
 
     await Promise.all(processingPromises)
-
-    // Close the context
     await context.close()
 
     return crawledData
@@ -249,7 +254,7 @@ class Crawler {
     const crawledData = []
 
     for await (const { URL, index } of queueGenerator) {
-      const page = await context.newPage({ javaScriptEnabled: false })
+      const page = await context.newPage()
       await page.setViewportSize({ width: 500, height: 900 })
 
       this.retries[index] = 0
@@ -274,16 +279,10 @@ class Crawler {
     return crawledData
   }
 
-  /**
-   * Reads data from a CSV file.
-   *
-   * @param {string} file - The file name to read.
-   * @returns {Promise<Object[]>} - The data read from the CSV file.
-   */
-  async readCSV(file) {
+  async readCSV() {
     const data = []
     return new Promise((resolve, reject) => {
-      createReadStream(file)
+      createReadStream(this.inputFile)
         .pipe(csv())
         .on('data', row => data.push(row))
         .on('end', () => resolve(data))
@@ -338,46 +337,71 @@ class Crawler {
       return 0
     })
 
+  writeResults = async records => {
+    const sortedData = this.sortResults(records)
+    const csvOutput = await parseAsync(sortedData, {
+      fields: ['URL', 'Title', 'Season', 'Episode', 'Show']
+    })
+    await fs.writeFile(this.outputFile, csvOutput)
+    this.log(
+      chalk.greenBright(
+        `Crawling and extraction complete. Output saved to ${chalk.white.bold(this.outputFile)}`
+      )
+    )
+  }
+
+  writeErrorLog = async () => {
+    if (this.errors.length > 0) {
+      const errorCount = this.errors.length
+      const errorLogFile = this.outputFile.replace('.csv', '-error-log.csv')
+      const errorLog = await parseAsync(this.errors, {
+        fields: ['URL', 'error']
+      })
+      await fs.writeFile(errorLogFile, errorLog)
+      this.log(
+        chalk.redBright(
+          `${chalk.white.bold(errorCount)} Error${errorCount > 1 ? 's' : ''} found. Error log saved to ${chalk.white.bold(errorLogFile)}`
+        )
+      )
+    }
+  }
+
   async main() {
     console.clear()
+    let crawledData = []
     try {
       const { inputFile, outputFile } = await this.promptUser()
+      this.outputFile = outputFile
+      this.inputFile = inputFile
       await this.splashScreen()
       console.log('\n\n\n')
-      await this.initializeBrowser()
 
-      const parsedCsv = await this.readCSV(inputFile)
+      const parsedCsv = await this.readCSV()
       const urls = parsedCsv.map(row => row.URL.trim())
       this.totalItems = urls.length
 
-      const crawledData = await this.crawlAllUrls(urls)
-      const sortedData = this.sortResults(crawledData)
-      const csvOutput = await parseAsync(sortedData, {
-        fields: ['URL', 'Title', 'Season', 'Episode', 'Show']
-      })
-      await fs.writeFile(outputFile, csvOutput)
-      this.log(
-        chalk.greenBright(
-          `Crawling and extraction complete. Output saved to ${chalk.white.bold(outputFile)}`
-        )
-      )
-      if (this.errors.length > 0) {
-        const errorCount = this.errors.length
-        const errorLogFile = outputFile.replace('.csv', '-error-log.csv')
-        const errorLog = await parseAsync(this.errors, {
-          fields: ['URL', 'error']
-        })
-        await fs.writeFile(errorLogFile, errorLog)
+      // split the urls into chunks of 350
+      const chunkSize = 350
+      const chunks = []
+      for (let i = 0; i < urls.length; i += chunkSize) {
+        chunks.push(urls.slice(i, i + chunkSize))
+      }
+      for (const chunk of chunks) {
         this.log(
-          chalk.redBright(
-            `${chalk.white.bold(errorCount)} Error${errorCount > 1 ? 's' : ''} found. Error log saved to ${chalk.white.bold(errorLogFile)}`
-          )
+          chalk.greenBright(
+            `Crawling ${chalk.white.bold(chunks.indexOf(chunk) + 1)} of ${chalk.white.bold(chunks.length)} chunks`)
         )
+        await this.closeBrowser()
+        await this.initializeBrowser()
+        const chunkData = await this.crawlAllUrls(chunk)
+        crawledData = [...crawledData, ...chunkData]
       }
     } catch (error) {
       console.error(chalk.red(`Error: ${error.message}`))
     } finally {
       await this.closeBrowser()
+      await this.writeResults(crawledData)
+      await this.writeErrorLog()
     }
   }
 }

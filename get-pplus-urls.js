@@ -8,13 +8,13 @@ import * as fs from 'fs'
 
 class Scraper {
   constructor() {
-    this.FALLBACK_URL = 'https://www.paramountplus.com/brands/mtv/'
+    this.FALLBACK_URL = 'https://www.paramountplus.com/brands/nickelodeon/'
     this.SEARCH_URL = 'https://www.paramountplus.com/search/'
     this.SHOWS_URL = 'https://www.paramountplus.com/shows/'
-    this.DATA_CSV = 'titled-episodes.csv'
-    this.RESULT_CSV = 'episodes-redirects.csv'
+    this.DATA_CSV = 'nickjr-output.csv'
+    this.RESULT_CSV = 'nick-clip-redirects.csv'
     this.MATCHES_CSV = 'matches.csv'
-    this.MIN_CONFIDENCE = 0.58
+    this.MIN_CONFIDENCE = 0.7
     this.MIN_SEARCH_LENGTH = 3
 
     this.browser = null
@@ -22,6 +22,7 @@ class Scraper {
     this.notFoundList = []
     this.missingShows = []
     this.matchesList = []
+    this.episodeMap = {}
     this.currentRow = null
     this.totalRows = 0
     this.completedRows = 0
@@ -126,7 +127,15 @@ class Scraper {
 
   isErrorPage = async () => {
     const pageTitle = await this.page.title()
-    return pageTitle.includes('404') || pageTitle.includes('Error')
+    
+    if (pageTitle.includes('404') || pageTitle.includes('Error')) {
+      return true
+    }
+    const h2 = await this.page.$('h2')
+    if (h2) {
+      const text = await h2.innerText()
+      return text.includes('404')
+    }
   }
 
   searchProperty = async searchTerm => {
@@ -141,9 +150,6 @@ class Scraper {
     const { Title, Season, Episode, URL } = this.currentRow
 
     if (!bestMatch) {
-      this.log(
-        chalk.red(`No optimal match found for ${chalk.white.bold(Title)}`)
-      )
       this.writeOutput(
         Title,
         searchTerm,
@@ -185,7 +191,7 @@ class Scraper {
       if (i > this.MIN_SEARCH_LENGTH && !hrefs[0]) {
         this.log(
           chalk.red(
-            `No search results found after ${chalk.whiteBright.bold(i)} characters`
+            `No search results for ${chalk.whiteBright.bold(searchTerm)} found after ${chalk.whiteBright.bold(i)} characters`
           )
         )
         i = searchTerm.length
@@ -197,6 +203,11 @@ class Scraper {
 
       if (bestMatch) {
         this.matchesList.push({ searchTerm, bestMatch })
+        this.log(
+          chalk.greenBright(
+            `Found a match for ${chalk.whiteBright.bold(searchTerm)} after ${chalk.whiteBright.bold(i)} characters`
+          )
+        )
         break
       }
     }
@@ -205,8 +216,9 @@ class Scraper {
 
   gotoSeason = async seasonUrl => {
     if (this.page.url().trim() !== seasonUrl.trim()) {
+      const { Season, Show } = this.currentRow
       this.log(
-        chalk.magenta(`Identified season link: ${chalk.white.bold(seasonUrl)}`)
+        chalk.magenta(`Identified link for ${chalk.white.bold(Show + ' S' + Season)}: ${chalk.white.bold(seasonUrl)}`)
       )
       return await this.page
         .goto(seasonUrl, { waitUntil: 'domcontentloaded' })
@@ -215,6 +227,20 @@ class Scraper {
         })
     }
   }
+
+  convertEpisodeNumber(episodeNumber, seasonNumber) {
+    if (typeof episodeNumber === 'string' && episodeNumber.length >= 3) {
+      const seasonPrefix = seasonNumber.toString();
+      if (episodeNumber.startsWith(seasonPrefix)) {
+        const episodePart = parseInt(episodeNumber.slice(seasonPrefix.length), 10);
+
+        return episodePart;
+      }
+    }
+
+    return parseInt(episodeNumber, 10);
+  }
+
 
   findEpisodeTarget = async bestMatch => {
     const { URL, Title, Episode, Season, Show } = this.currentRow
@@ -232,6 +258,7 @@ class Scraper {
           `Skipped ${chalk.white.bold(seasonUrl)} as it was not found previously`
         )
       )
+      this.writeOutput(Title, Show, Season, Episode, URL, bestMatch)
       return
     }
     await this.gotoSeason(seasonUrl)
@@ -244,17 +271,21 @@ class Scraper {
       return
     }
 
-    const stringToFind = `E${Episode}`
+    const cleanEpisode = this.convertEpisodeNumber(Episode, Season);
+
+    const stringToFind = `E${cleanEpisode}`
 
     try {
       await this.page.waitForSelector('.episode .epNum', { timeout: 600 })
       const episodes = await this.page.$$('.episode .epNum')
+      const { Title, Show, Season, URL } = this.currentRow
+      let episodeLink = false
 
       for (const episodeHandle of episodes) {
         const text = await episodeHandle.innerText()
 
         if (text === stringToFind) {
-          const episodeLink = await this.getEpisodeHref(episodeHandle)
+          episodeLink = await this.getEpisodeHref(episodeHandle)
 
           if (episodeLink) {
             this.log(
@@ -262,12 +293,14 @@ class Scraper {
                 `Identified episode link for ${chalk.white.bold(stringToFind)}: ${chalk.white.bold(episodeLink)}`
               )
             )
-
-            const { Title, Show, Season, URL } = this.currentRow
             this.writeOutput(Title, Show, Season, Episode, URL, episodeLink)
-            break
+            continue
           }
         }
+      }
+
+      if (!episodeLink) {
+        this.writeOutput(Title, Show, Season, Episode, URL, seasonUrl)
       }
     } catch ({ message }) {
       const error = message.split('\n')?.[0] ?? message
@@ -279,6 +312,7 @@ class Scraper {
       )
     }
   }
+        
 
   getEpisodeHref = async episodeHandle => {
     return await episodeHandle.evaluate(element => {
@@ -409,9 +443,8 @@ class Scraper {
     this.RESULT_CSV = outputFile
     // uncomment for headless mode
     // this.browser = await chromium.launch()
-    console.clear()
     this.splashScreen()
-    this.browser = await chromium.launch({ headless: false })
+    this.browser = await chromium.launch()
     this.page = await this.browser.newPage()
 
     // load existing matches to speed up the process
